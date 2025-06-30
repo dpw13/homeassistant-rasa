@@ -1,0 +1,15 @@
+{
+  "domain": "rasa",
+  "name": "Rasa NLP",
+  "version": "3.7.0a1",
+  "after_dependencies": ["assist_pipeline", "intent"],
+  "codeowners": ["@dpw13"],
+  "config_flow": true,
+  "dependencies": ["conversation"],
+  "documentation": "https://github.com/dpw13/homeassistant-rasa",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "quality_scale": "bronze",
+  "requirements": ["rasa-sdk==3.13.0rc1", "rasa-client==3.7.0a1"],
+  "single_config_entry": true
+}
