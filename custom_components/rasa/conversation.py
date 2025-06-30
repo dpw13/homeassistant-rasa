@@ -18,7 +18,9 @@ from homeassistant.components.conversation import (
     ConversationInput,
     ConversationResult,
     async_set_agent,
+    async_unset_agent,
 )
+from homeassistant.components.assist_pipeline import async_migrate_engine
 from homeassistant.components.homeassistant import async_should_expose
 from homeassistant.const import MATCH_ALL
 from homeassistant.exceptions import IntegrationError
@@ -85,7 +87,9 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="Rasa",
-            model="Custom",
+            name="Rasa NLP",
+            sw_version=rasa_client.__version__,
+            model="OSS Natural Language Server",
             entry_type=dr.DeviceEntryType.SERVICE,
         )
         self._attr_supported_features = ConversationEntityFeature.CONTROL
@@ -93,13 +97,42 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             hass, entry.data.get("action_port", 5055)
         )
 
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        async_migrate_engine(
+            self.hass, "conversation", self._entry.entry_id, self.entity_id
+        )
+        async_set_agent(self.hass, self._entry, self)
+        self._entry.async_on_unload(
+            self._entry.add_update_listener(self._async_entry_update_listener)
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """When entity will be removed from Home Assistant."""
+        async_unset_agent(self.hass, self.entry)
+        await super().async_will_remove_from_hass()
+
     @property
     def supported_languages(self) -> list[str]:
         """Return a list of supported languages."""
         return ["en"]
 
+    async def async_prepare(self) -> None:
+        """Prepare agent for a specific language.
+
+        It's unknown where this is actually supposed to be called; it doesn't seem
+        to get called at all given our current setup.
+        """
+        _LOGGER.info("ASYNC_PREPARE")
+
     async def async_setup(self) -> None:
-        """Connect to server."""
+        """Set up the integration.
+
+        Called during server startup. Does not contain any information about whether
+        the service is actually used by an assistant.
+        """
+        _LOGGER.info("ASYNC_SETUP")
         try:
             rsp_ver = await self._server_info_api.get_version(DEFAULT_TIMEOUT)
             _LOGGER.info("Connected to Rasa server version %s", rsp_ver.version)
@@ -206,3 +239,10 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             response=response,
             continue_conversation=False,
         )
+
+    async def _async_entry_update_listener(
+        self, hass: core.HomeAssistant, entry: RasaConfigEntry
+    ) -> None:
+        """Handle options update."""
+        # Reload as we update device info + entity name + supported features
+        await hass.config_entries.async_reload(entry.entry_id)

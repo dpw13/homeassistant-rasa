@@ -242,9 +242,10 @@ class DeviceAmountForm(DeviceLocationForm):
         domain: dict,
     ) -> dict[str, Any]:
         """Validate action."""
-        slot_value = slot_value.lower().replace(" ", "_")
+        slot_value = slot_value.lower()
+        action_name = slot_value.replace(" ", "_")
         new_slots = dict(tracker.slots)
-        new_slots.update({"action": slot_value})
+        new_slots.update({"action": action_name})
 
         actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
             new_slots
@@ -273,7 +274,7 @@ class DeviceAmountForm(DeviceLocationForm):
         # TODO: figure out what to do when we find multiple devices when searching by action.
 
         # Found at least one matching entity
-        ret = {"action": slot_value}
+        ret = {"action": action_name}
         if len(location_ids) == 1:
             loc = _HASS_IF.get_location_by_id(location_ids[0])
             logger.debug("Assuming location %s from action", loc)

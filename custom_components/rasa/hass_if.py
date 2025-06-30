@@ -87,7 +87,7 @@ async def _get_areas(
 # Refactored from helpers/llm.py
 async def _get_exposed_entities(
     hass: core.HomeAssistant,
-    assistant: str,
+    assistant: str = "conversation",
 ) -> tuple[
     dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, dict[str, Any]]
 ]:
@@ -95,20 +95,32 @@ async def _get_exposed_entities(
 
     Returns entities, areas, and floor. Each entry is a dict keyed by ID. Areas
     include a list of entity IDs belonging to the area.
+
+    Important note about the "assistant" argument. Conversation plugins such as
+    ollama use helpers/llm.py to access various HA entities. However, within
+    llm.py, an "LLM context" object is instantiated where the "assistant" argument
+    is set to `DOMAIN`. But `DOMAIN` in llm.py is "conversation"; llm.py is
+    designed to be used by the native HA conversation assistant. The Rasa integration
+    is built the same way. So despite `DOMAIN` here being `rasa`, we need to query
+    entity exposure based on the assistant value of "conversation".
     """
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
 
     entities = {}
-    entities_by_area: dict[str, Any] = {}
+    entities_by_area: dict[str, list[str]] = {}
+
+    _LOGGER.info("Checking all entities for exposure to %s", assistant)
 
     for state in sorted(hass.states.async_all(), key=attrgetter("name")):
+        _LOGGER.info("Should expose? %s", state)
         if not async_should_expose(hass, assistant, state.entity_id):
             continue
 
         entity_entry = entity_registry.async_get(state.entity_id)
         names = [state.name]
         area_ids = []
+        actions = {}
 
         if entity_entry is not None:
             names.extend(entity_entry.aliases)
@@ -130,15 +142,15 @@ async def _get_exposed_entities(
                     else:
                         entities_by_area[device.area_id].append(state.entity_id)
 
-            actions_map = await async_get_device_automations(
-                hass, DeviceAutomationType.ACTION, (entity_entry.device_id,)
-            )
-            # async_get_device_automations returns actions for all device IDs, but we
-            # only care about one right now. Restructure into dict by keying on
-            # the action name.
-            # It doesn't appear that use of `CONF_TYPE` is *enforced* so this could break
-            # for some devices.
-            actions = {a[CONF_TYPE]: a for a in actions_map[entity_entry.device_id]}
+                actions_map = await async_get_device_automations(
+                    hass, DeviceAutomationType.ACTION, (entity_entry.device_id,)
+                )
+                # async_get_device_automations returns actions for all device IDs, but we
+                # only care about one right now. Restructure into dict by keying on
+                # the action name.
+                # It doesn't appear that use of `CONF_TYPE` is *enforced* so this could break
+                # for some devices.
+                actions = {a[CONF_TYPE]: a for a in actions_map[entity_entry.device_id]}
 
             info: dict[str, Any] = {
                 "names": names,
@@ -154,11 +166,12 @@ async def _get_exposed_entities(
                 if attr_name in INTERESTING_ATTRIBUTES
             ]
 
+            _LOGGER.info("Entity %s: %s", state.entity_id, info)
             entities[state.entity_id] = info
 
     areas, floors = await _get_areas(hass, entities_by_area.keys())
-    for area_id, entities in entities_by_area.items():
-        areas[area_id]["entity_ids"] = entities
+    for area_id, ent in entities_by_area.items():
+        areas[area_id]["entity_ids"] = ent
 
     return entities, areas, floors
 
@@ -175,8 +188,9 @@ def _reverse_map(map: dict[str, Any]) -> dict[str, Any]:
             # Note that we are using the identical `val` here so there are multiple
             # references to the same value dictionary.
             if name in result:
-                raise ValueError(
-                    f"Key collision: The name {name} already refers to an object"
+                _LOGGER.warning(
+                    "Key collision: The name %s already refers to an object. Control may be impaired",
+                    name,
                 )
             result[name] = val
 
@@ -223,11 +237,15 @@ class HassIface:
             self._entity_by_id,
             self._area_by_id,
             self._floor_by_id,
-        ) = await _get_exposed_entities(self._hass, assistant="rasa")
+        ) = await _get_exposed_entities(self._hass)
         # Remap by names
         self._entity_by_name = _reverse_map(self._entity_by_id)
         self._area_by_name = _reverse_map(self._area_by_id)
         self._floor_by_name = _reverse_map(self._floor_by_id)
+
+        _LOGGER.info("Areas: %s", self._area_by_name.keys())
+        _LOGGER.info("Floors: %s", self._floor_by_name.keys())
+        _LOGGER.info("Entities: %s", self._entity_by_name.keys())
 
     def get_location_by_id(self, loc_id: str) -> str:
         """Get the location name for the location ID."""
