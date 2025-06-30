@@ -349,7 +349,11 @@ class HassIface:
 
         if slots["location"]:
             area_ids: set[str] = set()
-            for loc in slots["location"]:
+            if isinstance(slots["location"], str):
+                locs = (slots["location"],)
+            else:
+                locs = slots["location"]
+            for loc in locs:
                 # Collect all applicable location IDs
                 area_ids.update(self._get_area_ids(loc))
         else:
@@ -398,9 +402,9 @@ class HassIface:
         # user can ask to "increase the temperature" (attribute) or
         # "turn off the fan" (entity).
         if location:
-            loc_list = [location]
+            loc_list = (location,)
         else:
-            loc_list = []
+            loc_list = ()
 
         # Try entity name/type first
         candidate_ids = self.get_matching_entities(
