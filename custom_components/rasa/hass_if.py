@@ -176,11 +176,12 @@ async def _get_exposed_entities(
     return entities, areas, floors
 
 
-def _reverse_map(map: dict[str, Any]) -> dict[str, Any]:
+def _reverse_map(map: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Reverse a dictionary of name lists."""
-    result: dict[str, Any] = {}
+    result: dict[str, dict[str, Any]] = {}
 
     for k, v in map.items():
+        # Create copy
         val = dict(v)
         names = val.pop("names", [])
         val["id"] = k
@@ -218,14 +219,14 @@ class HassIface:
         """Initialize the action server."""
         self._hass = hass
         # These are dictionaries mapping the object ID to the relevant object info.
-        self._entity_by_id: dict[str, Any] = {}
-        self._area_by_id: dict[str, Any] = {}
-        self._floor_by_id: dict[str, Any] = {}
+        self._entity_by_id: dict[str, dict[str, Any]] = {}
+        self._area_by_id: dict[str, dict[str, Any]] = {}
+        self._floor_by_id: dict[str, dict[str, Any]] = {}
         # These are the same as above, but the key is by object name. Aliases are
         # also present as keys.
-        self._entity_by_name: dict[str, Any] = {}
-        self._area_by_name: dict[str, Any] = {}
-        self._floor_by_name: dict[str, Any] = {}
+        self._entity_by_name: dict[str, dict[str, Any]] = {}
+        self._area_by_name: dict[str, dict[str, Any]] = {}
+        self._floor_by_name: dict[str, dict[str, Any]] = {}
 
         # Server settings
         self._host = "0.0.0.0"
@@ -287,7 +288,7 @@ class HassIface:
 
         if (
             entity_names
-            and entity["name"] not in entity_names
+            and all(name not in entity_names for name in entity["names"])
             and entity["domain"] not in entity_names
         ):
             # entity_names is populated but this entity's name and domain both do not match
