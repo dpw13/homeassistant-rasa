@@ -61,8 +61,8 @@ async def _get_areas(
         if area is None:
             continue
 
-        area_names = [area.name]
-        area_names.extend(area.aliases)
+        area_names = [area.name.lower()]
+        area_names.extend(a.lower() for a in area.aliases)
         areas[area_id] = {
             "names": area_names,
             "floor_id": area.floor_id,
@@ -74,8 +74,8 @@ async def _get_areas(
                 if floor is None:
                     continue
 
-                floor_names = [floor.name]
-                floor_names.extend(floor.aliases)
+                floor_names = [floor.name.lower()]
+                floor_names.extend(a.lower() for a in floor.aliases)
 
                 floors[area.floor_id] = {"names": floor_names, "area_ids": [area_id]}
             else:
@@ -118,12 +118,12 @@ async def _get_exposed_entities(
             continue
 
         entity_entry = entity_registry.async_get(state.entity_id)
-        names = [state.name]
+        names = [state.name.lower()]
         area_ids = []
         actions = {}
 
         if entity_entry is not None:
-            names.extend(entity_entry.aliases)
+            names.extend(a.lower() for a in entity_entry.aliases)
             if entity_entry.area_id:
                 # Entity is in area
                 area_ids.append(entity_entry.area_id)
