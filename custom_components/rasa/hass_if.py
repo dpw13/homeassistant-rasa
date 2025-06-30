@@ -316,9 +316,13 @@ class HassIface:
         # We weren't able to filter this entity away
         return True
 
-    def is_known_location(self, loc: str):
-        """Return true if we know about this location name, otherwise false."""
-        return loc in self._area_by_name or loc in self._floor_by_name
+    def find_location_by_name(self, loc: str) -> dict[str, Any] | None:
+        """Return the location with the specified name or return None if not found."""
+        if loc in self._area_by_name:
+            return self._area_by_name[loc]
+        if loc in self._floor_by_name:
+            return self._floor_by_name[loc]
+        return None
 
     def get_matching_entities(
         self, locations: list[str], entities: list[str], attributes: list[str]

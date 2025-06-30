@@ -73,8 +73,9 @@ class DeviceLocationForm(FormValidationAction):
             # to match.
             return {"multiple": True, "location": None}
 
-        if _HASS_IF.is_known_location(slot_value):
-            return {"location": slot_value}
+        loc = _HASS_IF.find_location_by_name(slot_value)
+        if loc is not None:
+            return {"location": loc["id"]}
 
         dispatcher.utter_message(f"Sorry, I don't know the location {slot_value}")
         return {"location": None}
@@ -137,17 +138,19 @@ class DeviceLocationForm(FormValidationAction):
         # Found at least one matching entity
         ret = {"device": slot_value, "multiple": plural}
         if len(location_ids) == 1:
-            loc = _HASS_IF.get_location_by_id(location_ids[0])
-            logger.debug("Assuming location %s from device", loc)
-            ret["location"] = loc
+            loc_id = location_ids.pop()
+            logger.debug("Assuming location %s from device", loc_id)
+            ret["location"] = loc_id
         if len(parameters) == 1:
-            logger.debug("Assuming parameter %s from device", parameters[0])
-            ret["parameter"] = parameters[0]
+            parameter = parameters.pop()
+            logger.debug("Assuming parameter %s from device", parameter)
+            ret["parameter"] = parameter
         if len(actions) == 1:
             # This seems pretty unlikely. Any device will at least have both turn_on and
             # turn_off. Still, include for completion.
-            logger.debug("Assuming action %s from device", actions[0])
-            ret["action"] = actions[0]
+            action = actions.pop()
+            logger.debug("Assuming action %s from device", action)
+            ret["action"] = action
 
         return ret
 
@@ -192,17 +195,18 @@ class DeviceLocationForm(FormValidationAction):
         # Found at least one matching entity
         ret = {"parameter": slot_value}
         if len(location_ids) == 1:
-            loc = _HASS_IF.get_location_by_id(location_ids[0])
+            loc = _HASS_IF.get_location_by_id(location_ids.pop())
             logger.debug("Assuming location %s from parameter", loc)
             ret["location"] = loc
         if len(entity_ids) == 1:
-            ent = _HASS_IF.get_entity_by_id(entity_ids[0])
+            ent = _HASS_IF.get_entity_by_id(entity_ids.pop())
             logger.debug("Assuming device %s from parameter", ent)
             ret["device"] = ent
         if len(actions) == 1:
             # See note above, this seems pretty unlikely.
-            logger.debug("Assuming action %s from device", actions[0])
-            ret["action"] = actions[0]
+            action = actions.pop()
+            logger.debug("Assuming action %s from device", action)
+            ret["action"] = action
 
         return ret
 
@@ -276,13 +280,13 @@ class DeviceAmountForm(DeviceLocationForm):
         # Found at least one matching entity
         ret = {"action": action_name}
         if len(location_ids) == 1:
-            loc = _HASS_IF.get_location_by_id(location_ids[0])
-            logger.debug("Assuming location %s from action", loc)
-            ret["location"] = loc
+            loc_id = location_ids.pop()
+            logger.debug("Assuming location %s from action", loc_id)
+            ret["location"] = loc_id
         if len(entity_ids) == 1:
-            ent = _HASS_IF.get_entity_by_id(entity_ids[0])
-            logger.debug("Assuming device %s from action", ent)
-            ret["device"] = ent
+            ent_id = entity_ids.pop()
+            logger.debug("Assuming device %s from action", ent_id)
+            ret["device"] = ent_id
         if len(parameters) == 1:
             # There's a relationship between parameters and actions that doesn't seem well
             # defined just yet. "turn on" may affect brightness, for instance, but we don't
@@ -291,8 +295,9 @@ class DeviceAmountForm(DeviceLocationForm):
             # See e.g. the action schema in homeassistant/components/light/device_action.py
             # This may become more clear when we figure out how to actually *call* the
             # actions.
-            logger.debug("Assuming parameter %s from action", parameters[0])
-            ret["parameter"] = parameters[0]
+            parameter = parameters.pop()
+            logger.debug("Assuming parameter %s from action", parameter)
+            ret["parameter"] = parameter
 
         return ret
 
