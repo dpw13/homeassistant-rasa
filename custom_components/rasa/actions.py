@@ -64,6 +64,15 @@ class DeviceLocationForm(FormValidationAction):
         domain: dict,
     ) -> dict[str, Any]:
         """Validate the requested location."""
+        slot_value = slot_value.lower()
+        logger.debug("Validating location '%s'", slot_value)
+
+        if slot_value in ("any", "all", "each"):
+            # These values indicate we should be dealing with all entities matching
+            # any remaining conditions and that we probably expect multiple entities
+            # to match.
+            return {"multiple": True, "location": None}
+
         if _HASS_IF.is_known_location(slot_value):
             return {"location": slot_value}
 
@@ -86,11 +95,16 @@ class DeviceLocationForm(FormValidationAction):
         # TODO: better lemmatization
         # TODO: determine whether we allow multiple matches by whether the device is plural
         # TODO: support multiple matching devices
+        slot_value = slot_value.lower()
         plural = slot_value.endswith("s")
         slot_value = slot_value.rstrip("s")
 
+        logger.debug("Validating device '%s'", slot_value)
+        new_slots = dict(tracker.slots)
+        new_slots.update({"device": slot_value})
+
         actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
-            tracker.slots
+            new_slots
         )
 
         if not entity_ids:
@@ -145,8 +159,14 @@ class DeviceLocationForm(FormValidationAction):
         domain: dict,
     ) -> dict[str, Any]:
         """Validate parameter to try to find a set of devices given the other constraints."""
+        slot_value = slot_value.lower()
+
+        logger.debug("Validating parameter '%s'", slot_value)
+        new_slots = dict(tracker.slots)
+        new_slots.update({"parameter": slot_value})
+
         actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
-            tracker.slots
+            new_slots
         )
 
         if not parameters:
@@ -222,8 +242,12 @@ class DeviceAmountForm(DeviceLocationForm):
         domain: dict,
     ) -> dict[str, Any]:
         """Validate action."""
+        slot_value = slot_value.lower().replace(" ", "_")
+        new_slots = dict(tracker.slots)
+        new_slots.update({"action": slot_value})
+
         actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
-            tracker.slots
+            new_slots
         )
 
         if not actions:
