@@ -1,0 +1,416 @@
+"""Hass interface for the Rasa action server."""
+
+# pylint: disable=fixme
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+import logging
+from operator import attrgetter
+from typing import Any
+
+from homeassistant import core
+from homeassistant.components.device_automation import (
+    DeviceAutomationType,
+    async_get_device_automations,
+)
+from homeassistant.components.homeassistant import async_should_expose
+from homeassistant.const import CONF_TYPE
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+    floor_registry as fr,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+
+INTERESTING_ATTRIBUTES = {
+    "temperature",
+    "current_temperature",
+    "temperature_unit",
+    "brightness",
+    "humidity",
+    "unit_of_measurement",
+    "device_class",
+    "current_position",
+    "percentage",
+    "volume_level",
+    "media_title",
+    "media_artist",
+    "media_album_name",
+}
+
+
+async def _get_areas(
+    hass: core.HomeAssistant, area_ids: Iterable[Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Retrieve all areas and floors given the area IDs.
+
+    Floors contain a list of area IDs they include.
+    """
+    area_registry = ar.async_get(hass)
+    floor_reg = fr.async_get(hass)
+
+    areas: dict[str, Any] = {}
+    floors: dict[str, Any] = {}
+
+    for area_id in area_ids:
+        area = area_registry.async_get_area(area_id)
+        if area is None:
+            continue
+
+        area_names = [area.name]
+        area_names.extend(area.aliases)
+        areas[area_id] = {
+            "names": area_names,
+            "floor_id": area.floor_id,
+        }
+
+        if area.floor_id:
+            if area.floor_id not in floors:
+                floor = floor_reg.async_get_floor(area.floor_id)
+                if floor is None:
+                    continue
+
+                floor_names = [floor.name]
+                floor_names.extend(floor.aliases)
+
+                floors[area.floor_id] = {"names": floor_names, "area_ids": [area_id]}
+            else:
+                floors[area.floor_id]["area_ids"].append(area_id)
+
+    return areas, floors
+
+
+# Refactored from helpers/llm.py
+async def _get_exposed_entities(
+    hass: core.HomeAssistant,
+    assistant: str,
+) -> tuple[
+    dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, dict[str, Any]]
+]:
+    """Get exposed entities.
+
+    Returns entities, areas, and floor. Each entry is a dict keyed by ID. Areas
+    include a list of entity IDs belonging to the area.
+    """
+    entity_registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
+
+    entities = {}
+    entities_by_area: dict[str, Any] = {}
+
+    for state in sorted(hass.states.async_all(), key=attrgetter("name")):
+        if not async_should_expose(hass, assistant, state.entity_id):
+            continue
+
+        entity_entry = entity_registry.async_get(state.entity_id)
+        names = [state.name]
+        area_ids = []
+
+        if entity_entry is not None:
+            names.extend(entity_entry.aliases)
+            if entity_entry.area_id:
+                # Entity is in area
+                area_ids.append(entity_entry.area_id)
+                if entity_entry.area_id not in entities_by_area:
+                    entities_by_area[entity_entry.area_id] = [state.entity_id]
+                else:
+                    entities_by_area[entity_entry.area_id].append(state.entity_id)
+            if entity_entry.device_id and (
+                device := device_registry.async_get(entity_entry.device_id)
+            ):
+                # Check device area
+                if device.area_id:
+                    area_ids.append(device.area_id)
+                    if device.area_id not in entities_by_area:
+                        entities_by_area[device.area_id] = [state.entity_id]
+                    else:
+                        entities_by_area[device.area_id].append(state.entity_id)
+
+            actions_map = await async_get_device_automations(
+                hass, DeviceAutomationType.ACTION, (entity_entry.device_id,)
+            )
+            # async_get_device_automations returns actions for all device IDs, but we
+            # only care about one right now. Restructure into dict by keying on
+            # the action name.
+            # It doesn't appear that use of `CONF_TYPE` is *enforced* so this could break
+            # for some devices.
+            actions = {a[CONF_TYPE]: a for a in actions_map[entity_entry.device_id]}
+
+            info: dict[str, Any] = {
+                "names": names,
+                "domain": state.domain,
+                "platform": entity_entry.platform,
+                "area_ids": area_ids,
+                "actions": actions,
+            }
+
+            info["attributes"] = [
+                attr_name
+                for attr_name in state.attributes
+                if attr_name in INTERESTING_ATTRIBUTES
+            ]
+
+            entities[state.entity_id] = info
+
+    areas, floors = await _get_areas(hass, entities_by_area.keys())
+    for area_id, entities in entities_by_area.items():
+        areas[area_id]["entity_ids"] = entities
+
+    return entities, areas, floors
+
+
+def _reverse_map(map: dict[str, Any]) -> dict[str, Any]:
+    """Reverse a dictionary of name lists."""
+    result: dict[str, Any] = {}
+
+    for k, v in map.items():
+        val = dict(v)
+        names = val.pop("names", [])
+        val["id"] = k
+        for name in names:
+            # Note that we are using the identical `val` here so there are multiple
+            # references to the same value dictionary.
+            if name in result:
+                raise ValueError(
+                    f"Key collision: The name {name} already refers to an object"
+                )
+            result[name] = val
+
+    return result
+
+
+class SdkArgs:
+    """Helper class for passing arguments to SDK action server."""
+
+    def __init__(self, **kwargs) -> None:
+        """Initialize the object with any desired attributes."""
+        self._data = kwargs
+
+    def __getattr__(self, name: str):
+        """Retrieve any set attributes or None without raising."""
+        if name in self._data:
+            return self._data[name]
+        return None
+
+
+class HassIface:
+    """Action server that receives queries from the Rasa server."""
+
+    def __init__(self, hass: core.HomeAssistant) -> None:
+        """Initialize the action server."""
+        self._hass = hass
+        # These are dictionaries mapping the object ID to the relevant object info.
+        self._entity_by_id: dict[str, Any] = {}
+        self._area_by_id: dict[str, Any] = {}
+        self._floor_by_id: dict[str, Any] = {}
+        # These are the same as above, but the key is by object name. Aliases are
+        # also present as keys.
+        self._entity_by_name: dict[str, Any] = {}
+        self._area_by_name: dict[str, Any] = {}
+        self._floor_by_name: dict[str, Any] = {}
+
+        # Server settings
+        self._host = "0.0.0.0"
+        self._protocol = "http"
+
+    async def load(self) -> None:
+        """Load entities."""
+        (
+            self._entity_by_id,
+            self._area_by_id,
+            self._floor_by_id,
+        ) = await _get_exposed_entities(self._hass, assistant="rasa")
+        # Remap by names
+        self._entity_by_name = _reverse_map(self._entity_by_id)
+        self._area_by_name = _reverse_map(self._area_by_id)
+        self._floor_by_name = _reverse_map(self._floor_by_id)
+
+    def get_location_by_id(self, loc_id: str) -> str:
+        """Get the location name for the location ID."""
+        if loc_id in self._area_by_id:
+            return self._area_by_id[loc_id]
+        if loc_id in self._floor_by_id:
+            return self._floor_by_id[loc_id]
+        raise IndexError(f"Location ID {loc_id} matches no known location")
+
+    def get_entity_by_id(self, ent_id: str) -> str:
+        """Get the device name for the device ID."""
+        return self._entity_by_id[ent_id]
+
+    def _get_area_ids(self, location: str) -> list[str]:
+        """Check floors and areas to find all area IDs compatible with this location name."""
+        if location in self._floor_by_name:
+            # If the location is a floor, include all areas on that floor
+            return self._floor_by_name[location]["area_ids"]
+
+        if location in self._area_by_name:
+            # Not a floor but is an area name
+            return [self._area_by_name[location]["id"]]
+
+        # No locations found
+        raise ValueError(f"Location {location} not found")
+
+    def _entity_is_candidate(
+        self,
+        entity_id: str,
+        entity_names: list[str],
+        attributes: list[str],
+        actions: list[str],
+    ) -> bool:
+        """Determine whether the entity matches the list of specified names or attributes.
+
+        Only check entity names and attributes if the corresponding parameter is populated.
+        """
+        entity = self._entity_by_id[entity_id]
+
+        if (
+            entity_names
+            and entity["name"] not in entity_names
+            and entity["domain"] not in entity_names
+        ):
+            # entity_names is populated but this entity's name and domain both do not match
+            return False
+
+        if attributes:
+            if entity["attributes"]:
+                if all(attr not in attributes for attr in entity["attributes"]):
+                    # attributes are populated and this entity has attributes, but none of
+                    # them match the desired list.
+                    return False
+            else:
+                # attributes specified but this entity has no attributes. Consider this not a match.
+                return False
+
+        if actions:
+            if entity["actions"]:
+                if all(act not in actions for act in entity["actions"]):
+                    # No overlap between specified actions and device.
+                    return False
+            else:
+                # specific action requested but device has no actions
+                return False
+
+        # We weren't able to filter this entity away
+        return True
+
+    def is_known_location(self, loc: str):
+        """Return true if we know about this location name, otherwise false."""
+        return loc in self._area_by_name or loc in self._floor_by_name
+
+    def get_matching_entities(
+        self, locations: list[str], entities: list[str], attributes: list[str]
+    ) -> set[str]:
+        """Get a list of entity IDs matching the specified parameters.
+
+        If any of location, entity, or attribute are an empty list, do not
+        filter on those names. Each of the arguments is a list of descriptive
+        names, not the entity or location IDs.
+        """
+
+        if locations:
+            area_ids: set[str] = set()
+            for loc in locations:
+                # Collect all applicable location IDs
+                area_ids.update(self._get_area_ids(loc))
+        else:
+            # If no locations specified, use all locations.
+            area_ids = set(self._area_by_id.keys())
+
+        # TODO: could make this dynamically call hass to query entities
+        entity_ids = set()
+        for area_id in area_ids:
+            for entity_id in self._area_by_id[area_id]["entity_ids"]:
+                if self._entity_is_candidate(entity_id, entities, attributes, ()):
+                    entity_ids.add(entity_id)
+
+        return entity_ids
+
+    def match_entities(
+        self, slots: dict[str, Any]
+    ) -> tuple[set[str], set[str], set[str], set[str]]:
+        """Find all matching entities and their associated locations and parameters.
+
+        If any of location, entity, or attribute are an empty list, do not
+        filter on those names. Each of the arguments is a list of descriptive
+        names, not the entity or location IDs.
+
+        First, find the set of all entities matching the specified location,
+        entity name, and attributes. In addition to the set of matching
+        entities, collect the set of locations and parameters of those
+        matching entities.
+
+        Return value:
+        (actions, location_ids, entity_ids, attributes)
+        """
+
+        if slots["location"]:
+            area_ids: set[str] = set()
+            for loc in slots["location"]:
+                # Collect all applicable location IDs
+                area_ids.update(self._get_area_ids(loc))
+        else:
+            # If no locations specified, use all locations.
+            area_ids = set(self._area_by_id.keys())
+
+        # TODO: could make this dynamically call hass to query entities
+        matching_entities = set()
+        matching_areas = set()
+        matching_attributes = set()
+        matching_actions = set()
+        for area_id in area_ids:
+            for entity_id in self._area_by_id[area_id]["entity_ids"]:
+                if self._entity_is_candidate(
+                    entity_id, slots["device"], slots["parameter"], slots["action"]
+                ):
+                    matching_areas.add(area_id)
+                    matching_entities.add(entity_id)
+
+                    entity = self._entity_by_id[entity_id]
+                    if slots["parameter"]:
+                        # Only add matching parameters if parameters were specified.
+                        matching_attributes.update(
+                            a for a in entity["attributes"] if a in slots["parameter"]
+                        )
+                    else:
+                        # If no parameters were specified, collect all attributes
+                        # of matching entities.
+                        matching_attributes.update(entity["attributes"])
+
+                    # Actions work very similarly to parameters
+                    if slots["action"]:
+                        # Only add matching actions
+                        matching_actions.update(
+                            a for a in entity["actions"] if a in slots["action"]
+                        )
+                    else:
+                        # Accumulate all matching actions
+                        matching_actions.update(entity["actions"])
+
+        return matching_actions, matching_areas, matching_entities, matching_attributes
+
+    def find_entity(self, location: str | None, thing: str):
+        """Find the best matching entities given the user-specified location and entity or attribute name."""
+        # TODO: it's not super clear what the best approach is here. The
+        # user can ask to "increase the temperature" (attribute) or
+        # "turn off the fan" (entity).
+        if location:
+            loc_list = [location]
+        else:
+            loc_list = []
+
+        # Try entity name/type first
+        candidate_ids = self.get_matching_entities(
+            locations=loc_list, entities=[thing], attributes=[]
+        )
+
+        if not candidate_ids:
+            # Try searching by attribute
+            candidate_ids = self.get_matching_entities(
+                locations=loc_list, entities=[], attributes=[thing]
+            )
+
+        return candidate_ids

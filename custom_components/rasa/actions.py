@@ -31,50 +31,22 @@ import logging
 from typing import Any
 
 from rasa_sdk import Action, Tracker
-from rasa_sdk.events import AllSlotsReset, EventType
+from rasa_sdk.events import AllSlotsReset, BotUttered, EventType
 from rasa_sdk.executor import CollectingDispatcher
 from rasa_sdk.forms import FormValidationAction
 
+from .hass_if import HassIface
+
 logger = logging.getLogger(__name__)
 
+_HASS_IF: HassIface = None
 
-TEST_DEVICE_LIST: dict[str, dict[str, dict[str, Any]]] = {
-    "basement": {
-        "light": {
-            "brightness": 4,
-        },
-        "fan": {
-            "speed": 1,
-        },
-        "thermostat": {
-            "temperature": 72,
-        },
-    },
-    "upstairs": {
-        "light": {
-            "brightness": 2,
-        },
-    },
-    "living room": {
-        "fan": {
-            "speed": 1,
-        },
-        "light": {
-            "brightness": 4,
-        },
-        "thermostat": {
-            "temperature": 72,
-        },
-    },
-    "outside": {
-        "gate": {
-            "state": "closed",
-        },
-        "garage": {
-            "state": "closed",
-        },
-    },
-}
+
+def register_hass(hass_if: HassIface):
+    """Register HASS interface with action server."""
+    # pylint: disable=global-statement
+    global _HASS_IF
+    _HASS_IF = hass_if
 
 
 class DeviceLocationForm(FormValidationAction):
@@ -92,10 +64,11 @@ class DeviceLocationForm(FormValidationAction):
         domain: dict,
     ) -> dict[str, Any]:
         """Validate the requested location."""
-        if slot_value not in TEST_DEVICE_LIST:
-            dispatcher.utter_message(f"Sorry, I don't know the location {slot_value}")
-            return {"location": None}
-        return {"location": slot_value}
+        if _HASS_IF.is_known_location(slot_value):
+            return {"location": slot_value}
+
+        dispatcher.utter_message(f"Sorry, I don't know the location {slot_value}")
+        return {"location": None}
 
     def validate_device(
         self,
@@ -104,38 +77,65 @@ class DeviceLocationForm(FormValidationAction):
         tracker: Tracker,
         domain: dict,
     ) -> dict[str, Any]:
-        """Validate device to try to find a set of devices given the other constraints."""
+        """Validate the device slot.
+
+        As with the other slot validation functions, check to see how many devices match
+        the current slot value. Make a (feeble) attempt at determining whether the user's
+        intent is to match multiple devices by checking whether the slot name is plural.
+        """
         # TODO: better lemmatization
         # TODO: determine whether we allow multiple matches by whether the device is plural
         # TODO: support multiple matching devices
+        plural = slot_value.endswith("s")
         slot_value = slot_value.rstrip("s")
-        location = tracker.slots["location"]
-        for loc, devices in TEST_DEVICE_LIST.items():
-            if location is None or loc == location:
-                if slot_value in devices:
-                    logger.debug("Found matching device %s %s", loc, slot_value)
-                    ret = {"device": slot_value}
-                    if tracker.slots["parameter"] is None:
-                        parameters = list(devices[slot_value].keys())
-                        logger.debug("Assuming parameter %s from device", parameters[0])
-                        ret["parameter"] = parameters[0]
-                    if tracker.slots["location"] is None:
-                        logger.debug("Assuming location %s from device", loc)
-                        ret["location"] = loc
 
-                    return ret
+        actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
+            tracker.slots
+        )
 
-        if location is None:
-            logger.warning("no device '%s' found", slot_value)
+        if not entity_ids:
+            filters = []
+            if tracker.slots["location"] is not None:
+                filters.append("in " + tracker.slots["location"])
+
+            if tracker.slots["parameter"] is not None:
+                filters.append("with a " + tracker.slots["parameter"])
+
+            if tracker.slots["action"] is not None:
+                filters.append("that we can " + tracker.slots["action"])
+
+            filter_msg = " ".join(filters)
+            logger.warning("no device '%s' found %s", slot_value, filter_msg)
             dispatcher.utter_message(
-                f"Sorry, I don't know of any devices called {slot_value}"
+                f"Sorry, I don't know of any devices called {slot_value} {filter_msg}."
             )
-        else:
-            logger.warning("no device '%s' found for %s", slot_value, location)
+            return {"device": None}
+
+        if len(entity_ids) > 1 and not plural:
+            # Found more than one matching entity ID but only expected one.
+            # TODO: confirmation dialog path
+            # TODO: actually we probably only want to confirm this once we know for sure
+            # we've filled all slots, which means we need a "plural" slot.
             dispatcher.utter_message(
-                f"Sorry, I don't know of any devices called {slot_value} in {location}"
+                f"Found {len(entity_ids)} {slot_value}s in {len(location_ids)} locations, but it sounds like you only wanted one. Do you want to adjust them all?"
             )
-        return {"device": None}
+
+        # Found at least one matching entity
+        ret = {"device": slot_value, "multiple": plural}
+        if len(location_ids) == 1:
+            loc = _HASS_IF.get_location_by_id(location_ids[0])
+            logger.debug("Assuming location %s from device", loc)
+            ret["location"] = loc
+        if len(parameters) == 1:
+            logger.debug("Assuming parameter %s from device", parameters[0])
+            ret["parameter"] = parameters[0]
+        if len(actions) == 1:
+            # This seems pretty unlikely. Any device will at least have both turn_on and
+            # turn_off. Still, include for completion.
+            logger.debug("Assuming action %s from device", actions[0])
+            ret["action"] = actions[0]
+
+        return ret
 
     def validate_parameter(
         self,
@@ -145,34 +145,46 @@ class DeviceLocationForm(FormValidationAction):
         domain: dict,
     ) -> dict[str, Any]:
         """Validate parameter to try to find a set of devices given the other constraints."""
+        actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
+            tracker.slots
+        )
 
-        # TODO: support multiple matching devices
-        location = tracker.slots["location"]
-        for loc, devices in TEST_DEVICE_LIST.items():
-            if location is None or loc == location:
-                for device, params in devices.items():
-                    if slot_value in params:
-                        logger.debug(
-                            "Found matching device %s %s with parameter %s",
-                            loc,
-                            device,
-                            slot_value,
-                        )
-                        return {"device": device, "parameter": slot_value}
+        if not parameters:
+            filters = []
+            if tracker.slots["location"] is not None:
+                filters.append("in " + tracker.slots["location"])
 
-        # No matching device was found. At this point just determine how we want to respond to
-        # the user.
-        if location is None:
-            logger.warning("no devices with '%s' found", slot_value)
+            if tracker.slots["device"] is not None:
+                filters.append("called " + tracker.slots["device"])
+
+            if tracker.slots["action"] is not None:
+                filters.append("that we can " + tracker.slots["action"])
+
+            filter_msg = " ".join(filters)
+            logger.warning("no devices with a '%s' found %s", slot_value, filter_msg)
             dispatcher.utter_message(
-                f"Sorry, I don't know of any devices with a {slot_value}"
+                f"Sorry, I don't know of any devices with a {slot_value} {filter_msg}."
             )
-        else:
-            logger.warning("no devices with '%s' found for %s", slot_value, location)
-            dispatcher.utter_message(
-                f"Sorry, I don't know of any devices with a {slot_value} in {location}"
-            )
-        return {"parameter": None}
+            return {"device": None}
+
+        # TODO: figure out what to do when we find multiple devices when searching by parameter.
+
+        # Found at least one matching entity
+        ret = {"parameter": slot_value}
+        if len(location_ids) == 1:
+            loc = _HASS_IF.get_location_by_id(location_ids[0])
+            logger.debug("Assuming location %s from parameter", loc)
+            ret["location"] = loc
+        if len(entity_ids) == 1:
+            ent = _HASS_IF.get_entity_by_id(entity_ids[0])
+            logger.debug("Assuming device %s from parameter", ent)
+            ret["device"] = ent
+        if len(actions) == 1:
+            # See note above, this seems pretty unlikely.
+            logger.debug("Assuming action %s from device", actions[0])
+            ret["action"] = actions[0]
+
+        return ret
 
 
 class DeviceAmountForm(DeviceLocationForm):
@@ -210,17 +222,54 @@ class DeviceAmountForm(DeviceLocationForm):
         domain: dict,
     ) -> dict[str, Any]:
         """Validate action."""
-        logger.info("Found action '%s'", slot_value)
-        if slot_value in self.ACTION_DICT:
-            t = self.ACTION_DICT[slot_value]
-            ret: dict[str, Any] = {"action": t[0]}
-            if tracker.slots["amount"] is None:
-                # Only set the amount if it's not already set
-                # TODO: can we ensure amount is parsed first?
-                ret["amount"] = t[1]
-            return ret
+        actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
+            tracker.slots
+        )
 
-        return {}
+        if not actions:
+            filters = []
+            if tracker.slots["location"] is not None:
+                filters.append("in " + tracker.slots["location"])
+
+            if tracker.slots["device"] is not None:
+                filters.append("called " + tracker.slots["device"])
+
+            if tracker.slots["parameter"] is not None:
+                filters.append("with a " + tracker.slots["parameter"])
+
+            filter_msg = " ".join(filters)
+            logger.warning(
+                "no devices that we can '%s' found %s", slot_value, filter_msg
+            )
+            dispatcher.utter_message(
+                f"Sorry, I don't know of any devices we can {slot_value} {filter_msg}."
+            )
+            return {"action": None}
+
+        # TODO: figure out what to do when we find multiple devices when searching by action.
+
+        # Found at least one matching entity
+        ret = {"action": slot_value}
+        if len(location_ids) == 1:
+            loc = _HASS_IF.get_location_by_id(location_ids[0])
+            logger.debug("Assuming location %s from action", loc)
+            ret["location"] = loc
+        if len(entity_ids) == 1:
+            ent = _HASS_IF.get_entity_by_id(entity_ids[0])
+            logger.debug("Assuming device %s from action", ent)
+            ret["device"] = ent
+        if len(parameters) == 1:
+            # There's a relationship between parameters and actions that doesn't seem well
+            # defined just yet. "turn on" may affect brightness, for instance, but we don't
+            # necessarily need an "amount" for such an action. Similar for mute, etc.
+            #
+            # See e.g. the action schema in homeassistant/components/light/device_action.py
+            # This may become more clear when we figure out how to actually *call* the
+            # actions.
+            logger.debug("Assuming parameter %s from action", parameters[0])
+            ret["parameter"] = parameters[0]
+
+        return ret
 
     def validate_amount(
         self,
@@ -283,22 +332,13 @@ class SubmitAdjust(Action):
         }
         logger.info("Executing: %s", args)
 
+        # TODO: validate action as well
+
         try:
-            loc = TEST_DEVICE_LIST[tracker.slots["location"]]
-            dev = loc[tracker.slots["device"]]
-            if tracker.slots["action"] == "set_absolute":
-                dev[tracker.slots["parameter"]] = tracker.slots["amount"]
-            elif tracker.slots["action"] == "set_relative":
-                # TODO: clamp values
-                dev[tracker.slots["parameter"]] += tracker.slots["amount"]
-            else:
-                raise ValueError(
-                    f"Action {tracker.slots['action']} unimplemented for {tracker.slots['device']}"
-                )
             # TODO: May be better to set a slot and utter something in domain.yml
             # TODO: support multiple devices being set at once
             dispatcher.utter_message(
-                f"Set {tracker.slots['device']} {tracker.slots['parameter']} to {dev[tracker.slots['parameter']]}"
+                f"Set {tracker.slots['device']} {tracker.slots['parameter']}"
             )
         except KeyError:
             logger.exception("Error making adjustment")
@@ -306,7 +346,7 @@ class SubmitAdjust(Action):
                 f"Sorry, there was an error setting the {tracker.slots['device']} {tracker.slots['parameter']}."
             )
 
-        return [AllSlotsReset()]
+        return [BotUttered("Unimplemented, come back later."), AllSlotsReset()]
 
 
 ########################
@@ -339,21 +379,7 @@ class SubmitQuery(Action):
         args = {k: tracker.slots[k] for k in ("location", "device", "parameter")}
         logger.info("Executing: %s", args)
 
-        try:
-            loc = TEST_DEVICE_LIST[tracker.slots["location"]]
-            dev = loc[tracker.slots["device"]]
-            amount = dev[tracker.slots["parameter"]]
-            # TODO: May be better to set a slot and utter something in domain.yml
-            dispatcher.utter_message(
-                f"The {tracker.slots['location']} {tracker.slots['device']} {tracker.slots['parameter']} is {amount}"
-            )
-        except KeyError:
-            logger.exception("Error submitting query")
-            dispatcher.utter_message(
-                f"Sorry, there was an error getting the {tracker.slots['device']} {tracker.slots['parameter']}."
-            )
-
-        return [AllSlotsReset()]
+        return [BotUttered("Unimplemented, come back later."), AllSlotsReset()]
 
 
 class SubmitFilter(Action):
@@ -370,5 +396,4 @@ class SubmitFilter(Action):
         domain: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """Docstring."""
-        logger.warning("UNIMPLEMENTED")
-        return [AllSlotsReset()]
+        return [BotUttered("Unimplemented, come back later."), AllSlotsReset()]
