@@ -50,7 +50,7 @@ def register_hass(hass_if: HassIface):
 
 
 class DeviceLocationForm(FormValidationAction):
-    """Doctstring."""
+    """Docstring."""
 
     def name(self) -> str:
         """Name."""
@@ -106,6 +106,14 @@ class DeviceLocationForm(FormValidationAction):
 
         actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
             new_slots
+        )
+
+        logger.debug(
+            "Found %d actions, %d locations, %d entities, %d parameters",
+            len(actions),
+            len(location_ids),
+            len(entity_ids),
+            len(parameters),
         )
 
         if not entity_ids:
@@ -170,6 +178,14 @@ class DeviceLocationForm(FormValidationAction):
 
         actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
             new_slots
+        )
+
+        logger.debug(
+            "Found %d actions, %d locations, %d entities, %d parameters",
+            len(actions),
+            len(location_ids),
+            len(entity_ids),
+            len(parameters),
         )
 
         if not parameters:
@@ -251,8 +267,18 @@ class DeviceAmountForm(DeviceLocationForm):
         new_slots = dict(tracker.slots)
         new_slots.update({"action": action_name})
 
+        logger.debug("Validating action '%s'", action_name)
+
         actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
             new_slots
+        )
+
+        logger.debug(
+            "Found %d actions, %d locations, %d entities, %d parameters",
+            len(actions),
+            len(location_ids),
+            len(entity_ids),
+            len(parameters),
         )
 
         if not actions:
