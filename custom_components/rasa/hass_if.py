@@ -456,7 +456,7 @@ class HassIface:
         )
 
     async def apply_abs_adjustment(
-        self, action: str, device_ids: list[str], parameter: str | None, amount: Any
+        self, device_ids: list[str], parameter: str | None, amount: Any
     ) -> int:
         """Make the requested adjustment to the specified devices."""
 
@@ -482,7 +482,7 @@ class HassIface:
         return len(device_ids)
 
     async def apply_rel_adjustment(
-        self, action: str, device_ids: list[str], parameter: str | None, amount: float
+        self, device_ids: list[str], parameter: str | None, amount: float
     ) -> int:
         """Make the requested adjustment to the specified devices."""
 
