@@ -372,6 +372,18 @@ class HassIface:
         else:
             area_ids = set(slots["location"])
 
+        _LOGGER.debug("Matching entities: %s", slots)
+
+        # TODO: not sure we want to be modifying slots here...
+        for name in ("device", "parameter", "action"):
+            if slots[name] is not None and not isinstance(slots[name], list):
+                _LOGGER.warning(
+                    "%s slot should be list or None but is %s",
+                    name.capitalize(),
+                    type(slots[name]),
+                )
+                slots[name] = [slots[name]]
+
         # TODO: could make this dynamically call hass to query entities
         matching_entities = set()
         matching_areas = set()
@@ -407,29 +419,6 @@ class HassIface:
                         matching_actions.update(entity["actions"])
 
         return matching_actions, matching_areas, matching_entities, matching_attributes
-
-    def find_entity(self, location: str | None, thing: str):
-        """Find the best matching entities given the user-specified location and entity or attribute name."""
-        # TODO: it's not super clear what the best approach is here. The
-        # user can ask to "increase the temperature" (attribute) or
-        # "turn off the fan" (entity).
-        if location:
-            loc_list = (location,)
-        else:
-            loc_list = ()
-
-        # Try entity name/type first
-        candidate_ids = self.get_matching_entities(
-            locations=loc_list, entities=[thing], attributes=[]
-        )
-
-        if not candidate_ids:
-            # Try searching by attribute
-            candidate_ids = self.get_matching_entities(
-                locations=loc_list, entities=[], attributes=[thing]
-            )
-
-        return candidate_ids
 
     async def _apply_abs_adjustment(
         self,

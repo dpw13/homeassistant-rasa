@@ -302,12 +302,13 @@ class DeviceAmountForm(DeviceLocationForm):
                 # TODO: get relative amounts
                 slots_to_set["amount"] = amount
             slots_to_set["action"] = action
-        if current_slots["device"]:
+        if isinstance(current_slots["device"], str):
             device: str = current_slots["device"]
             if device.endswith("s"):
                 device = device.rstrip("s")
                 slots_to_set["multiple"] = True
-                slots_to_set["device"] = device
+            # `device`` should be list of names
+            slots_to_set["device"] = list(device)
 
         # Apply any slot changes we've accumulated so far
         current_slots.update(slots_to_set)
