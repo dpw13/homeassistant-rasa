@@ -460,15 +460,15 @@ class HassIface:
     ) -> int:
         """Make the requested adjustment to the specified devices."""
 
+        success_count = 0
         for did in device_ids:
             state = self._hass.states.get(did)
             if not state:
                 raise ValueError(f"Entity '{did}' does not exist")
 
             if parameter not in state.attributes:
-                raise ValueError(
-                    f"Entity '{did}' does not have attribute '{parameter}'"
-                )
+                _LOGGER.warning("Entity '%s' has no attribute '%s'", did, parameter)
+                continue
 
             _LOGGER.debug(
                 "Changing %s %s from %s to %s",
@@ -477,15 +477,17 @@ class HassIface:
                 state.attributes[parameter],
                 amount,
             )
-            self._apply_abs_adjustment(parameter, amount, state)
+            await self._apply_abs_adjustment(parameter, amount, state)
+            success_count += 1
 
-        return len(device_ids)
+        return success_count
 
     async def apply_rel_adjustment(
         self, device_ids: list[str], parameter: str | None, amount: float
     ) -> int:
         """Make the requested adjustment to the specified devices."""
 
+        success_count = 0
         for did in device_ids:
             state = self._hass.states.get(did)
             if not state:
@@ -504,7 +506,7 @@ class HassIface:
                 )
                 continue
 
-            new_amount = state.attributes[parameter] + amount
+            new_amount = current_value + amount
             _LOGGER.debug(
                 "Changing %s %s from %s to %s",
                 did,
@@ -512,9 +514,10 @@ class HassIface:
                 state.attributes[parameter],
                 new_amount,
             )
-            self._apply_abs_adjustment(parameter, new_amount, state)
+            await self._apply_abs_adjustment(parameter, new_amount, state)
+            success_count += 1
 
-        return len(device_ids)
+        return success_count
 
     async def apply_action(self, action: str, device_ids: list[str]) -> int:
         """Make the requested adjustment to the specified devices."""
