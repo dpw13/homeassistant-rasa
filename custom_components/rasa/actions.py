@@ -202,6 +202,8 @@ class DeviceLocationForm(FormValidationAction):
         # domain.yml are unset, the server will request more slots to be
         # filled.
         # See rasa/core/actions/forms.py: FormAction::is_done()
+        # First update our current state
+        current_slots.update(slots_to_set)
         next_slot = self._next_slot(current_slots)
         if next_slot is not None:
             ret.append(SlotSet(key=REQUESTED_SLOT, value=next_slot))
@@ -387,6 +389,8 @@ class DeviceAmountForm(DeviceLocationForm):
         ret = [SlotSet(key=k, value=v) for k, v in slots_to_set.items()]
 
         # Determine whether to terminate the form or ask for more data.
+        # First update our current state
+        current_slots.update(slots_to_set)
         next_slot = self._next_slot(current_slots)
         if next_slot is not None:
             ret.append(SlotSet(key=REQUESTED_SLOT, value=next_slot))
