@@ -221,7 +221,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         self._dump_tracker_evts(tracker)
         if tracker.latest_message and tracker.latest_message.intent:
             rasa_intent = tracker.latest_message.intent
-            _LOGGER.debug("<- %f intent: %s", rasa_intent.confidence, rasa_intent.name)
+            _LOGGER.info("<- %f intent: %s", rasa_intent.confidence, rasa_intent.name)
 
         prediction: rasa_client.PredictResultScoresInner | None = None
         messages: list[str] = []
@@ -233,7 +233,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             )
             if predict_result.scores:
                 for score in predict_result.scores[:5]:
-                    _LOGGER.info("<- %f: %s", score.score, score.action)
+                    _LOGGER.debug("<- %f: %s", score.score, score.action)
             else:
                 raise IntegrationError("Received empty prediction result from server")
 
