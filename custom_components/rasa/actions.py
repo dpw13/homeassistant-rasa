@@ -487,7 +487,7 @@ class SubmitAdjust(Action):
         if action == "set_relative":
             param = tracker.slots["parameter"]
             amount = tracker.slots["amount"]
-            if isinstance(amount, (int, float)):
+            if not isinstance(amount, (int, float)):
                 msg = f"Sorry, I didn't understand the relative amount {amount}"
             else:
                 try:
