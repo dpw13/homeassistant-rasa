@@ -66,7 +66,7 @@ class RasaActionServer:
         )
 
         # Attach additional sanic extensions: listeners, middleware and routing
-        _LOGGER.info("Starting plugins")
+        _LOGGER.debug("Starting plugins")
         plugin_manager().hook.attach_sanic_app_extensions(app=app)
 
         return app

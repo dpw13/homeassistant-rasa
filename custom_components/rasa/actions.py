@@ -191,7 +191,7 @@ class DeviceLocationForm(FormValidationAction):
         _update_if_amount(slots_to_set, location_ids, "location", False)
         _update_if_amount(slots_to_set, parameters, "parameter", False)
 
-        logger.debug("Finishing with slots: %s", slots_to_set)
+        logger.info("Finishing with slots: %s", slots_to_set)
 
         ret = [SlotSet(key=k, value=v) for k, v in slots_to_set.items()]
         # We can terminate the form with SlotSet(REQUESTED_SLOT, None) or
@@ -511,7 +511,7 @@ class SubmitAdjust(Action):
                 # TODO: better past tense
                 action_names = action.split("_")
                 action_names[0] += "ed"
-                action_name = " ".join(action_names)
+                action_name = " ".join(action_names).capitalize()
                 msg = f"{action_name} {cnt} device{'s' if cnt > 0 else ''}"
             except ValueError as ex:
                 msg = str(ex)

@@ -133,7 +133,6 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         Called during server startup. Does not contain any information about whether
         the service is actually used by an assistant.
         """
-        _LOGGER.info("ASYNC_SETUP")
         try:
             rsp_ver = await self._server_info_api.get_version(DEFAULT_TIMEOUT)
             _LOGGER.info("Connected to Rasa server version %s", rsp_ver.version)
@@ -171,7 +170,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                         "intent",
                     )
                 ]
-                _LOGGER.info("-- %s evt: %s", data["event"], " ".join(pairs))
+                _LOGGER.debug("-- %s evt: %s", data["event"], " ".join(pairs))
 
     # This is where the actual conversation entity functionality is
     async def _async_handle_message(
@@ -209,7 +208,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                 add_conversation_tracker_events_request=msg_req,
             )
         else:
-            _LOGGER.info("Chat log so far: %s", chat_log)
+            _LOGGER.debug("Chat log so far: %s", chat_log)
         tracker = await self._tracker_api.add_conversation_message(
             conversation_id=conv_id,
             message=rasa_client.Message(
@@ -222,7 +221,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         self._dump_tracker_evts(tracker)
         if tracker.latest_message and tracker.latest_message.intent:
             rasa_intent = tracker.latest_message.intent
-            _LOGGER.info("<- %f intent: %s", rasa_intent.confidence, rasa_intent.name)
+            _LOGGER.debug("<- %f intent: %s", rasa_intent.confidence, rasa_intent.name)
 
         prediction: rasa_client.PredictResultScoresInner | None = None
         messages: list[str] = []
@@ -260,7 +259,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
 
             self._dump_tracker_evts(exec_result.tracker)
 
-        _LOGGER.info("<- %d messages", len(messages))
+        _LOGGER.debug("<- %d messages", len(messages))
         if messages:
             rsp_text = "\n".join(messages)
         else:
