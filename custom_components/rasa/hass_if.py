@@ -334,12 +334,14 @@ class HassIface:
         names, not the entity or location IDs.
         """
 
+        area_ids: set[str] = set()
         if locations:
-            area_ids: set[str] = set()
             for loc in locations:
-                # Collect all applicable location IDs
-                area_ids.update(self._get_area_ids(loc))
-        else:
+                # An empty string indicates all locations.
+                if loc:
+                    # Collect all applicable location IDs
+                    area_ids.update(self._get_area_ids(loc))
+        if not area_ids:
             # If no locations specified, use all locations.
             area_ids = set(self._area_by_id.keys())
 
@@ -370,16 +372,17 @@ class HassIface:
         (actions, location_ids, entity_ids, attributes)
         """
 
+        area_ids: set[str] = set()
         if slots["location"]:
-            area_ids: set[str] = set()
             if isinstance(slots["location"], str):
                 locs = (slots["location"],)
             else:
                 locs = slots["location"]
             for loc in locs:
-                # Collect all applicable location IDs
-                area_ids.update(self._get_area_ids(loc))
-        else:
+                if loc:
+                    # Collect all applicable location IDs
+                    area_ids.update(self._get_area_ids(loc))
+        if not area_ids:
             # If no locations specified, use all locations.
             area_ids = set(self._area_by_id.keys())
 
