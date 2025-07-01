@@ -93,6 +93,11 @@ class DeviceLocationForm(FormValidationAction):
 
         raise UnknownName(f"Sorry, I don't know the location {candidate}")
 
+    @property
+    def required_slots(self) -> list[str]:
+        logger.warning("REQUIRED SLOTS")
+        return []
+
     async def run(
         self,
         dispatcher: CollectingDispatcher,
