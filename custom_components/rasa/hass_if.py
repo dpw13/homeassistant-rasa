@@ -111,12 +111,10 @@ async def _get_exposed_entities(
 
     entities = {}
     entities_by_area: dict[str, list[str]] = {}
-    entities_by_floor: dict[str, list[str]] = {}
 
     _LOGGER.debug("Checking all entities for exposure to %s", assistant)
 
     for state in sorted(hass.states.async_all(), key=attrgetter("name")):
-        _LOGGER.debug("Should expose? %s", state)
         if not async_should_expose(hass, assistant, state.entity_id):
             continue
 
@@ -169,7 +167,7 @@ async def _get_exposed_entities(
                 if attr_name in INTERESTING_ATTRIBUTES
             ]
 
-            _LOGGER.debug("Entity %s: %s", state.entity_id, info)
+            # _LOGGER.debug("Entity %s: %s", state.entity_id, info)
             entities[state.entity_id] = info
 
     areas, floors = await _get_areas(hass, entities_by_area.keys())
