@@ -372,19 +372,16 @@ class HassIface:
         (actions, location_ids, entity_ids, attributes)
         """
 
-        area_ids: set[str] = set()
-        if slots["location"]:
-            if isinstance(slots["location"], str):
-                locs = (slots["location"],)
-            else:
-                locs = slots["location"]
-            for loc in locs:
-                if loc:
-                    # Collect all applicable location IDs
-                    area_ids.update(self._get_area_ids(loc))
-        if not area_ids:
+        # Location slot must be location ID at this stage.
+        if slots["location"] is None or not slots["location"]:
             # If no locations specified, use all locations.
             area_ids = set(self._area_by_id.keys())
+        elif isinstance(slots["location"], str):
+            area_ids = {
+                slots["location"],
+            }
+        else:
+            area_ids = set(slots["location"])
 
         # TODO: could make this dynamically call hass to query entities
         matching_entities = set()
