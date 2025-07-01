@@ -53,6 +53,18 @@ def register_hass(hass_if: HassIface):
     _HASS_IF = hass_if
 
 
+def _update_if_amount(
+    slots: dict[str, Any], elements: set[str], name: str, multiple: bool
+):
+    """Update the slots to set depending on whether we allow multiple elements."""
+    if not multiple and len(elements) == 1:
+        action = elements.pop()
+        logger.debug("Found single %s %s", name, action)
+        slots[name] = action
+    elif multiple:
+        slots[name] = list(elements)
+
+
 class DeviceLocationForm(FormValidationAction):
     """Docstring."""
 
@@ -151,7 +163,9 @@ class DeviceLocationForm(FormValidationAction):
             # TODO: what do we do if nothing is found? Can we discard just one constraint?
             return [response, AllSlotsReset()]
 
-        if len(entity_ids) > 1 and not current_slots.get("multiple", False):
+        multiple = current_slots.get("multiple", False)
+
+        if len(entity_ids) > 1 and not multiple:
             # Found more than one matching entity ID but only expected one.
             # TODO: confirmation dialog path
             # TODO: actually we probably only want to confirm this once we know for sure
@@ -165,25 +179,13 @@ class DeviceLocationForm(FormValidationAction):
             return rsp
 
         # Found at least one matching entity
-        if len(location_ids) == 1:
-            loc_id = location_ids.pop()
-            logger.debug("Found single location %s", loc_id)
-            slots_to_set["location"] = loc_id
-        if len(entity_ids) == 1:
-            ent_id = entity_ids.pop()
-            logger.debug("Found single device %s", ent_id)
-            slots_to_set["device"] = ent_id
-        if len(parameters) == 1:
-            # There's a relationship between parameters and actions that doesn't seem well
-            # defined just yet. "turn on" may affect brightness, for instance, but we don't
-            # necessarily need an "amount" for such an action. Similar for mute, etc.
-            #
-            # See e.g. the action schema in homeassistant/components/light/device_action.py
-            # This may become more clear when we figure out how to actually *call* the
-            # actions.
-            parameter = parameters.pop()
-            logger.debug("Found single parameter %s", parameter)
-            slots_to_set["parameter"] = parameter
+
+        # Update selected entity IDs if the user expects multiple devices.
+        _update_if_amount(slots_to_set, entity_ids, "device", multiple)
+
+        # Locations and parameters we only set if we only find one.
+        _update_if_amount(slots_to_set, location_ids, "location", False)
+        _update_if_amount(slots_to_set, parameters, "parameter", False)
 
         logger.debug("Finishing with slots: %s", slots_to_set)
 
@@ -297,7 +299,9 @@ class DeviceAmountForm(DeviceLocationForm):
             # TODO: what do we do if nothing is found? Can we discard just one constraint?
             return [response, AllSlotsReset()]
 
-        if len(entity_ids) > 1 and not current_slots.get("multiple", False):
+        multiple = current_slots.get("multiple", False)
+
+        if len(entity_ids) > 1 and not multiple:
             # Found more than one matching entity ID but only expected one.
             # TODO: confirmation dialog path
             # TODO: actually we probably only want to confirm this once we know for sure
@@ -311,29 +315,14 @@ class DeviceAmountForm(DeviceLocationForm):
             return rsp
 
         # Found at least one matching entity
-        if len(actions) == 1:
-            action = actions.pop()
-            logger.debug("Found single action %s", action)
-            slots_to_set["location"] = action
-        if len(location_ids) == 1:
-            loc_id = location_ids.pop()
-            logger.debug("Found single location %s", loc_id)
-            slots_to_set["location"] = loc_id
-        if len(entity_ids) == 1:
-            ent_id = entity_ids.pop()
-            logger.debug("Found single device %s", ent_id)
-            slots_to_set["device"] = ent_id
-        if len(parameters) == 1:
-            # There's a relationship between parameters and actions that doesn't seem well
-            # defined just yet. "turn on" may affect brightness, for instance, but we don't
-            # necessarily need an "amount" for such an action. Similar for mute, etc.
-            #
-            # See e.g. the action schema in homeassistant/components/light/device_action.py
-            # This may become more clear when we figure out how to actually *call* the
-            # actions.
-            parameter = parameters.pop()
-            logger.debug("Found single parameter %s", parameter)
-            slots_to_set["parameter"] = parameter
+
+        # Update selected entity IDs if the user expects multiple devices.
+        _update_if_amount(slots_to_set, entity_ids, "device", multiple)
+
+        # Locations, actions, and parameters we only set if we only find one.
+        _update_if_amount(slots_to_set, actions, "action", False)
+        _update_if_amount(slots_to_set, location_ids, "location", False)
+        _update_if_amount(slots_to_set, parameters, "parameter", False)
 
         logger.debug("Finishing with slots: %s", slots_to_set)
 
