@@ -37,7 +37,6 @@ class RasaActionServer:
     async def launch(self) -> None:
         """Launch server."""
         self._iface = HassIface(self._hass)
-        await self._iface.load()
         actions.register_hass(self._iface)
 
         loader = AppLoader(factory=self._create_server)
@@ -86,5 +85,6 @@ class RasaActionServer:
             self._host,
             self._port,
         )
+        await self._iface.load()
 
         await server.serve_forever()

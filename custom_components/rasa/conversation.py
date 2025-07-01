@@ -10,6 +10,7 @@ import rasa_client
 from rasa_client.rest import ApiException
 
 from homeassistant import core
+from homeassistant.components.assist_pipeline import async_migrate_engine
 from homeassistant.components.conversation import (
     AbstractConversationAgent,
     ChatLog,
@@ -20,7 +21,6 @@ from homeassistant.components.conversation import (
     async_set_agent,
     async_unset_agent,
 )
-from homeassistant.components.assist_pipeline import async_migrate_engine
 from homeassistant.components.homeassistant import async_should_expose
 from homeassistant.const import MATCH_ALL
 from homeassistant.exceptions import IntegrationError
@@ -224,7 +224,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
 
         prediction: rasa_client.PredictResultScoresInner | None = None
         messages: list[str] = []
-        last_ts = 0.0
+
         while prediction is None or prediction.action != "action_listen":
             # Predict
             predict_result = await self._tracker_api.predict_conversation_action(
