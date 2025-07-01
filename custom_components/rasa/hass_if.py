@@ -385,6 +385,13 @@ class HassIface:
         else:
             actions = slots["action"]
 
+        # Remove set_relative and set_absolute; these are handled differently and
+        # not actions as HA sees them.
+        valid_actions = [
+            a for a in actions if a not in ("set_relative", "set_absolute")
+        ]
+        actions = valid_actions
+
         # TODO: could make this dynamically call hass to query entities
         matching_entities = set()
         matching_areas = set()
