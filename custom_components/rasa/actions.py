@@ -308,7 +308,7 @@ class DeviceAmountForm(DeviceLocationForm):
                 device = device.rstrip("s")
                 slots_to_set["multiple"] = True
             # `device`` should be list of names
-            slots_to_set["device"] = list(device)
+            slots_to_set["device"] = [device]
 
         # Apply any slot changes we've accumulated so far
         current_slots.update(slots_to_set)
