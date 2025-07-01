@@ -31,9 +31,9 @@ import logging
 from typing import Any
 
 from rasa_sdk import Action, Tracker
-from rasa_sdk.events import AllSlotsReset, BotUttered, EventType, SlotSet
+from rasa_sdk.events import ActiveLoop, AllSlotsReset, BotUttered, EventType, SlotSet
 from rasa_sdk.executor import CollectingDispatcher
-from rasa_sdk.forms import FormValidationAction
+from rasa_sdk.forms import REQUESTED_SLOT, FormValidationAction
 
 from .hass_if import HassIface
 
@@ -92,11 +92,6 @@ class DeviceLocationForm(FormValidationAction):
             return {"location": loc_ids}
 
         raise UnknownName(f"Sorry, I don't know the location {candidate}")
-
-    @property
-    def required_slots(self) -> list[str]:
-        logger.warning("REQUIRED SLOTS")
-        return []
 
     async def run(
         self,
@@ -198,7 +193,50 @@ class DeviceLocationForm(FormValidationAction):
 
         logger.debug("Finishing with slots: %s", slots_to_set)
 
-        return [SlotSet(key=k, value=v) for k, v in slots_to_set.items()]
+        ret = [SlotSet(key=k, value=v) for k, v in slots_to_set.items()]
+        # We can terminate the form with SlotSet(REQUESTED_SLOT, None) or
+        # with ActiveLoop(None). If we don't terminate and any slots in
+        # domain.yml are unset, the server will request more slots to be
+        # filled.
+        # See rasa/core/actions/forms.py: FormAction::is_done()
+        next_slot = self._next_slot(current_slots)
+        if next_slot is not None:
+            ret.append(SlotSet(key=REQUESTED_SLOT, value=next_slot))
+        else:
+            # We have all the data we need; terminate the form
+            ret.append(ActiveLoop(None))
+
+        return ret
+
+    def _next_slot(self, current_slots: dict[str, Any]) -> str | None:
+        """Determine which slots still need to be filled.
+
+        Scenarios:
+        turn on all the lights:
+            turn on requires no amount or parameter
+            "all" indicates multiple intent so no location required
+        turn off the upstairs lights:
+            turn off requires no amount or parameter
+            "lights" indicates multiple intent so multiple matches are acceptable
+        """
+        if isinstance(current_slots["device"], (list, set)):
+            device_count = len(current_slots["device"])
+        elif isinstance(current_slots["device"], str):
+            device_count = 1
+        else:
+            device_count = 0
+
+        if not current_slots["action"]:
+            # We always need an action.
+            return "action"
+        if device_count == 0:
+            # We always need at least one device.
+            return "device"
+        if device_count > 1 and not current_slots["multiple"]:
+            # We match more devices than expected. Try to narrow them down.
+            return "location"
+
+        return None
 
 
 class DeviceAmountForm(DeviceLocationForm):
@@ -259,6 +297,10 @@ class DeviceAmountForm(DeviceLocationForm):
                 slots_to_set.update(updates)
             except UnknownName as ex:
                 return [BotUttered(str(ex))]
+        if isinstance(current_slots["amount"], str):
+            # Attempt to extract amount if the slot is set
+            updates = self.validate_amount(current_slots, current_slots["amount"])
+            slots_to_set.update(updates)
 
         if current_slots["action"]:
             # Actions are snake case
@@ -339,30 +381,36 @@ class DeviceAmountForm(DeviceLocationForm):
 
         logger.debug("Finishing with slots: %s", slots_to_set)
 
-        return [SlotSet(key=k, value=v) for k, v in slots_to_set.items()]
+        ret = [SlotSet(key=k, value=v) for k, v in slots_to_set.items()]
 
-    async def validate_amount(
-        self,
-        slot_value: str,
-        dispatcher: CollectingDispatcher,
-        tracker: Tracker,
-        domain: dict,
+        # Determine whether to terminate the form or ask for more data.
+        next_slot = self._next_slot(current_slots)
+        if next_slot is not None:
+            ret.append(SlotSet(key=REQUESTED_SLOT, value=next_slot))
+        else:
+            # We have all the data we need; terminate the form
+            ret.append(ActiveLoop(None))
+
+        return ret
+
+    def validate_amount(
+        self, current_slots: dict[str, Any], candidate: str
     ) -> dict[str, Any]:
         """Validate and parse the amount."""
-        ret: dict[str, Any] = {"amount": slot_value}
+        ret: dict[str, Any] = {"amount": candidate}
         mult = 1.0
 
-        if isinstance(slot_value, str):
-            words = slot_value.split(" ")
+        if isinstance(candidate, str):
+            words = candidate.split(" ")
             for word in words:
                 if word == "percent":
                     mult = 0.01
                 else:
                     try:
                         ret["amount"] = float(word)
-                        if tracker.slots["action"] is None:
+                        if current_slots["action"] is None:
                             # Implicitly set absolute action when parsing amount
-                            ret["action"] = "absolute"
+                            ret["action"] = "set_absolute"
                     except ValueError:
                         pass
 
@@ -371,6 +419,30 @@ class DeviceAmountForm(DeviceLocationForm):
             ret["amount"] *= mult
 
         return ret
+
+    def _next_slot(self, current_slots: dict[str, Any]) -> str | None:
+        """Determine which slots still need to be filled.
+
+        Scenarios:
+        set the lights:
+            still need amount
+            parameter should be filled by search
+        """
+        next_slot = super()._next_slot(current_slots)
+        if next_slot is not None:
+            return next_slot
+
+        if current_slots["action"] in ("set_absolute", "set_relative"):
+            # For setting values we need the amount and parameter.
+            if not current_slots["amount"]:
+                return "amount"
+            if not current_slots["parameter"]:
+                # We weren't able to determine a parameter to adjust from the
+                # device. This may indicate a more nuanced problem, but for
+                # now just ask for the parameter to adjust.
+                return "parameter"
+
+        return None
 
 
 class ValidateAdjustForm(DeviceAmountForm):
