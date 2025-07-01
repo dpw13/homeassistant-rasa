@@ -496,10 +496,13 @@ class HassIface:
                     f"Entity '{did}' does not have attribute '{parameter}'"
                 )
 
-            if isinstance(state.attributes[parameter], (float, int)):
-                raise TypeError(
-                    f"Entity '{did}' attribute '{parameter}' is not numeric"
+            if not isinstance(state.attributes[parameter], (float, int)):
+                # TODO: when setting brightness on lights that aren't dimmable, we
+                # might consider turning them on above a certain threshold.
+                _LOGGER.warning(
+                    "Entity '%s' attribute '%s' is not numeric", did, parameter
                 )
+                continue
 
             new_amount = state.attributes[parameter] + amount
             _LOGGER.debug(
