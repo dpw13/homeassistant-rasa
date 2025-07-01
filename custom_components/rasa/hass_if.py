@@ -374,15 +374,15 @@ class HassIface:
 
         _LOGGER.debug("Matching entities: %s", slots)
 
-        # TODO: not sure we want to be modifying slots here...
-        for name in ("device", "parameter", "action"):
-            if slots[name] is not None and not isinstance(slots[name], list):
-                _LOGGER.warning(
-                    "%s slot should be list or None but is %s",
-                    name.capitalize(),
-                    type(slots[name]),
-                )
-                slots[name] = [slots[name]]
+        if isinstance(slots["parameter"], str):
+            params = [slots["parameter"]]
+        else:
+            params = slots["parameter"]
+
+        if isinstance(slots["action"], str):
+            actions = [slots["action"]]
+        else:
+            actions = slots["action"]
 
         # TODO: could make this dynamically call hass to query entities
         matching_entities = set()
@@ -392,16 +392,16 @@ class HassIface:
         for area_id in area_ids:
             for entity_id in self._get_entities_by_area(area_id):
                 if self._entity_is_candidate(
-                    entity_id, slots["device"], slots["parameter"], slots["action"]
+                    entity_id, slots["device"], params, actions
                 ):
                     matching_areas.add(area_id)
                     matching_entities.add(entity_id)
 
                     entity = self._entity_by_id[entity_id]
-                    if slots["parameter"]:
+                    if params:
                         # Only add matching parameters if parameters were specified.
                         matching_attributes.update(
-                            a for a in entity["attributes"] if a in slots["parameter"]
+                            a for a in entity["attributes"] if a in params
                         )
                     else:
                         # If no parameters were specified, collect all attributes
@@ -409,10 +409,10 @@ class HassIface:
                         matching_attributes.update(entity["attributes"])
 
                     # Actions work very similarly to parameters
-                    if slots["action"]:
+                    if actions:
                         # Only add matching actions
                         matching_actions.update(
-                            a for a in entity["actions"] if a in slots["action"]
+                            a for a in entity["actions"] if a in actions
                         )
                     else:
                         # Accumulate all matching actions
