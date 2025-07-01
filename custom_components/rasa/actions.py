@@ -53,16 +53,12 @@ def register_hass(hass_if: HassIface):
     _HASS_IF = hass_if
 
 
-def _update_if_amount(
-    slots: dict[str, Any], elements: set[str], name: str, multiple: bool
-):
+def _get_if_single(slots: dict[str, Any], elements: set[str], name: str):
     """Update the slots to set depending on whether we allow multiple elements."""
-    if not multiple and len(elements) == 1:
-        action = elements.pop()
-        logger.debug("Found single %s %s", name, action)
-        slots[name] = action
-    elif multiple:
-        slots[name] = list(elements)
+    if len(elements) == 1:
+        element = elements.pop()
+        logger.debug("Found single %s %s", name, element)
+        slots[name] = element
 
 
 class DeviceLocationForm(FormValidationAction):
@@ -187,12 +183,13 @@ class DeviceLocationForm(FormValidationAction):
 
         # Found at least one matching entity
 
-        # Update selected entity IDs if the user expects multiple devices.
-        _update_if_amount(slots_to_set, entity_ids, "device", multiple)
+        # Update selected entity IDs if the user expects multiple devices. The device
+        # IDs should also always be a list, even if only one device is returned.
+        slots_to_set["device"] = list(entity_ids)
 
         # Locations and parameters we only set if we only find one.
-        _update_if_amount(slots_to_set, location_ids, "location", False)
-        _update_if_amount(slots_to_set, parameters, "parameter", False)
+        _get_if_single(slots_to_set, location_ids, "location")
+        _get_if_single(slots_to_set, parameters, "parameter")
 
         logger.info("Finishing with slots: %s", slots_to_set)
 
@@ -379,12 +376,12 @@ class DeviceAmountForm(DeviceLocationForm):
         # Found at least one matching entity
 
         # Update selected entity IDs if the user expects multiple devices.
-        _update_if_amount(slots_to_set, entity_ids, "device", multiple)
+        slots_to_set["device"] = list(entity_ids)
 
         # Locations, actions, and parameters we only set if we only find one.
-        _update_if_amount(slots_to_set, actions, "action", False)
-        _update_if_amount(slots_to_set, location_ids, "location", False)
-        _update_if_amount(slots_to_set, parameters, "parameter", False)
+        _get_if_single(slots_to_set, actions, "action")
+        _get_if_single(slots_to_set, location_ids, "location")
+        _get_if_single(slots_to_set, parameters, "parameter")
 
         logger.debug("Finishing with slots: %s", slots_to_set)
 
