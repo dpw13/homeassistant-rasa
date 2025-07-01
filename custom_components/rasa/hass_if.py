@@ -15,7 +15,7 @@ from homeassistant.components.device_automation import (
     async_get_device_automations,
 )
 from homeassistant.components.homeassistant import async_should_expose
-from homeassistant.const import CONF_TYPE
+from homeassistant.const import CONF_TYPE, CONF_ENTITY_ID
 from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers import (
     area_registry as ar,
@@ -23,6 +23,7 @@ from homeassistant.helpers import (
     entity_registry as er,
     floor_registry as fr,
 )
+import voluptuous as vol
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ async def _get_exposed_entities(
 
     entities = {}
     entities_by_area: dict[str, list[str]] = {}
+    entities_by_floor: dict[str, list[str]] = {}
 
     _LOGGER.info("Checking all entities for exposure to %s", assistant)
 
@@ -173,6 +175,11 @@ async def _get_exposed_entities(
     areas, floors = await _get_areas(hass, entities_by_area.keys())
     for area_id, ent in entities_by_area.items():
         areas[area_id]["entity_ids"] = ent
+    # Calculate all entities on floor by accumulating all entites in all areas.
+    for floor in floors.values():
+        floor["entity_ids"] = []
+        for area_id in floor["area_ids"]:
+            floor["entity_ids"].extend(areas[area_id]["entity_ids"])
 
     return entities, areas, floors
 
@@ -328,35 +335,15 @@ class HassIface:
             ret.append(self._floor_by_name[loc]["id"])
         return ret
 
-    def get_matching_entities(
-        self, locations: list[str], entities: list[str], attributes: list[str]
-    ) -> set[str]:
-        """Get a list of entity IDs matching the specified parameters.
+    def _get_entities_by_area(self, area_id: str) -> list[str]:
+        """Get all entity IDs in floors or areas with the given ID."""
+        res: list[str] = []
+        if area_id in self._area_by_id:
+            res.extend(self._area_by_id[area_id]["entity_ids"])
+        if area_id in self._floor_by_id:
+            res.extend(self._floor_by_id[area_id]["entity_ids"])
 
-        If any of location, entity, or attribute are an empty list, do not
-        filter on those names. Each of the arguments is a list of descriptive
-        names, not the entity or location IDs.
-        """
-
-        area_ids: set[str] = set()
-        if locations:
-            for loc in locations:
-                # An empty string indicates all locations.
-                if loc:
-                    # Collect all applicable location IDs
-                    area_ids.update(self._get_area_ids(loc))
-        if not area_ids:
-            # If no locations specified, use all locations.
-            area_ids = set(self._area_by_id.keys())
-
-        # TODO: could make this dynamically call hass to query entities
-        entity_ids = set()
-        for area_id in area_ids:
-            for entity_id in self._area_by_id[area_id]["entity_ids"]:
-                if self._entity_is_candidate(entity_id, entities, attributes, ()):
-                    entity_ids.add(entity_id)
-
-        return entity_ids
+        return res
 
     def match_entities(
         self, slots: dict[str, Any]
@@ -393,7 +380,7 @@ class HassIface:
         matching_attributes = set()
         matching_actions = set()
         for area_id in area_ids:
-            for entity_id in self._area_by_id[area_id]["entity_ids"]:
+            for entity_id in self._get_entities_by_area(area_id):
                 if self._entity_is_candidate(
                     entity_id, slots["device"], slots["parameter"], slots["action"]
                 ):
@@ -534,16 +521,27 @@ class HassIface:
 
         for did in device_ids:
             state = self._hass.states.get(did)
-            self._hass.services.has_service()
 
             _LOGGER.debug("Calling %s.%s on %s", state.domain, action, did)
+            # TODO: you can actually 'turn_on' all entities in an area or on
+            # a floor. It may make more sense to do things that way eventually
+            # if performance is poor.
+            # TODO: some service schemas require additional information.
+            service_data = {CONF_ENTITY_ID: did}
             try:
                 await self._hass.services.async_call(
-                    state.domain, action, context=state.context, blocking=False
+                    state.domain,
+                    action,
+                    context=state.context,
+                    service_data=service_data,
+                    blocking=False,
                 )
             except ServiceNotFound as ex:
                 raise ValueError(
                     f"No action {action} exists for {state.domain}"
                 ) from ex
+            except vol.Invalid as ex:
+                # Service schema validation failure. We probably missed setting something.
+                raise ValueError(f"Could not {action} {did}") from ex
 
         return len(device_ids)
