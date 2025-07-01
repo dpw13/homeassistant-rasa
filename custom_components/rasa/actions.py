@@ -294,19 +294,21 @@ class DeviceAmountForm(DeviceLocationForm):
                 slots_to_set.update(updates)
             except UnknownName as ex:
                 return [BotUttered(str(ex))]
-        if isinstance(current_slots["amount"], str):
-            # Attempt to extract amount if the slot is set
-            updates = self.validate_amount(current_slots, current_slots["amount"])
-            slots_to_set.update(updates)
 
         if current_slots["action"]:
             # Actions are snake case
             action = current_slots["action"].replace(" ", "_")
             if action in self.ACTION_DICT:
                 action, amount = self.ACTION_DICT[action]
-                # TODO: get relative amounts
-                slots_to_set["amount"] = amount
+                if current_slots["amount"] is None:
+                    slots_to_set["amount"] = amount
             slots_to_set["action"] = action
+
+        if isinstance(current_slots["amount"], str):
+            # Attempt to extract amount if the slot is set
+            updates = self.validate_amount(current_slots, current_slots["amount"])
+            slots_to_set.update(updates)
+
         if isinstance(current_slots["device"], str):
             device: str = current_slots["device"]
             # `device` should be list of names
