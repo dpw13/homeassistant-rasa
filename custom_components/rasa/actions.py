@@ -304,11 +304,13 @@ class DeviceAmountForm(DeviceLocationForm):
             slots_to_set["action"] = action
         if isinstance(current_slots["device"], str):
             device: str = current_slots["device"]
-            if device.endswith("s"):
-                device = device.rstrip("s")
-                slots_to_set["multiple"] = True
-            # `device`` should be list of names
+            # `device` should be list of names
             slots_to_set["device"] = [device]
+            if device.endswith("s"):
+                singular = device.rstrip("s")
+                slots_to_set["multiple"] = True
+                # Look for the singular form of the name as well
+                slots_to_set["device"].append(singular)
 
         # Apply any slot changes we've accumulated so far
         current_slots.update(slots_to_set)

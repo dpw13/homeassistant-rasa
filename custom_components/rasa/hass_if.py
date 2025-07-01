@@ -9,13 +9,15 @@ import logging
 from operator import attrgetter
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant import core
 from homeassistant.components.device_automation import (
     DeviceAutomationType,
     async_get_device_automations,
 )
 from homeassistant.components.homeassistant import async_should_expose
-from homeassistant.const import CONF_TYPE, CONF_ENTITY_ID
+from homeassistant.const import CONF_ENTITY_ID, CONF_TYPE
 from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers import (
     area_registry as ar,
@@ -23,7 +25,6 @@ from homeassistant.helpers import (
     entity_registry as er,
     floor_registry as fr,
 )
-import voluptuous as vol
 
 _LOGGER = logging.getLogger(__name__)
 
