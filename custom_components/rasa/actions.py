@@ -126,10 +126,13 @@ class DeviceLocationForm(FormValidationAction):
 
         if current_slots["device"]:
             device: str = current_slots["device"]
+            # `device` should be list of names
+            slots_to_set["device"] = [device]
             if device.endswith("s"):
-                device = device.rstrip("s")
+                singular = device.rstrip("s")
                 slots_to_set["multiple"] = True
-                slots_to_set["device"] = device
+                # Look for the singular form of the name as well
+                slots_to_set["device"].append(singular)
 
         # Apply any slot changes we've accumulated so far
         current_slots.update(slots_to_set)
@@ -155,7 +158,7 @@ class DeviceLocationForm(FormValidationAction):
                 filters.append("in " + ", ".join(locs))
 
             if current_slots["device"] is not None:
-                filters.append("called " + current_slots["device"])
+                filters.append("called " + ", ".join(current_slots["device"]))
 
             if current_slots["parameter"] is not None:
                 filters.append("with a " + current_slots["parameter"])
@@ -339,7 +342,7 @@ class DeviceAmountForm(DeviceLocationForm):
                 filters.append("in " + ", ".join(locs))
 
             if current_slots["device"] is not None:
-                filters.append("called " + current_slots["device"])
+                filters.append("called " + ", ".join(current_slots["device"]))
 
             if current_slots["parameter"] is not None:
                 filters.append("with a " + current_slots["parameter"])
