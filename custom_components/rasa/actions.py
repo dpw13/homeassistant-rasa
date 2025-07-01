@@ -460,7 +460,6 @@ class SubmitAdjust(Action):
         """Docstring."""
         return "action_submit_adjust"
 
-    # TODO: indicate how many devices were altered when form is submitted
     async def run(
         self,
         dispatcher,
@@ -474,21 +473,50 @@ class SubmitAdjust(Action):
         }
         logger.info("Executing: %s", args)
 
-        # TODO: validate action as well
+        msg = None
 
-        try:
-            # TODO: May be better to set a slot and utter something in domain.yml
-            # TODO: support multiple devices being set at once
-            dispatcher.utter_message(
-                f"Set {tracker.slots['device']} {tracker.slots['parameter']}"
-            )
-        except KeyError:
-            logger.exception("Error making adjustment")
-            dispatcher.utter_message(
-                f"Sorry, there was an error setting the {tracker.slots['device']} {tracker.slots['parameter']}."
-            )
+        action: str = tracker.slots["action"]
+        devices = tracker.slots["device"]
+        if action == "set_relative":
+            param = tracker.slots["parameter"]
+            amount = tracker.slots["amount"]
+            if isinstance(amount, (int, float)):
+                msg = f"Sorry, I didn't understand the relative amount {amount}"
+            else:
+                try:
+                    cnt = await _HASS_IF.apply_rel_adjustment(
+                        device_ids=devices,
+                        parameter=param,
+                        amount=amount,
+                    )
+                    msg = f"Changed {param} on {cnt} device{'s' if cnt > 0 else ''}"
+                except ValueError as ex:
+                    msg = str(ex)
+        elif action == "set_absolute":
+            param = tracker.slots["parameter"]
+            amount = tracker.slots["amount"]
 
-        return [BotUttered("Unimplemented, come back later."), AllSlotsReset()]
+            try:
+                cnt = await _HASS_IF.apply_abs_adjustment(
+                    device_ids=devices,
+                    parameter=param,
+                    amount=amount,
+                )
+                msg = f"Set {param} on {cnt} device{'s' if cnt > 0 else ''}"
+            except ValueError as ex:
+                msg = str(ex)
+        else:
+            try:
+                cnt = await _HASS_IF.apply_action(action=action, device_ids=devices)
+                # TODO: better past tense
+                action_names = action.split("_")
+                action_names[0] += "ed"
+                action_name = " ".join(action_names)
+                msg = f"{action_name} {cnt} device{'s' if cnt > 0 else ''}"
+            except ValueError as ex:
+                msg = str(ex)
+
+        return [BotUttered(msg), AllSlotsReset()]
 
 
 ########################

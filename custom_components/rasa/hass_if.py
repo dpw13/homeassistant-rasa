@@ -16,6 +16,7 @@ from homeassistant.components.device_automation import (
 )
 from homeassistant.components.homeassistant import async_should_expose
 from homeassistant.const import CONF_TYPE
+from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers import (
     area_registry as ar,
     device_registry as dr,
@@ -444,3 +445,105 @@ class HassIface:
             )
 
         return candidate_ids
+
+    async def _apply_abs_adjustment(
+        self,
+        parameter: str,
+        amount: Any,
+        state: core.State,
+    ):
+        """Make the requested adjustment to the specified device. State must be pre-filled."""
+
+        # By default assume we don't need to change the state.
+        new_state = state.state
+        if state.state == "off" and amount > 0:
+            new_state = "on"
+        if state.state == "on" and abs(amount) < 0.01:
+            # Note that we check for "approximately off", or less than 1% on.
+            new_state = "off"
+
+        attributes = {parameter: amount}
+
+        await self._hass.states.async_set(
+            state.domain,
+            new_state=new_state,
+            attributes=attributes,
+            context=state.context,
+        )
+
+    async def apply_abs_adjustment(
+        self, action: str, device_ids: list[str], parameter: str | None, amount: Any
+    ) -> int:
+        """Make the requested adjustment to the specified devices."""
+
+        for did in device_ids:
+            state = self._hass.states.get(did)
+            if not state:
+                raise ValueError(f"Entity '{did}' does not exist")
+
+            if parameter not in state.attributes:
+                raise ValueError(
+                    f"Entity '{did}' does not have attribute '{parameter}'"
+                )
+
+            _LOGGER.debug(
+                "Changing %s %s from %s to %s",
+                did,
+                parameter,
+                state.attributes[parameter],
+                amount,
+            )
+            self._apply_abs_adjustment(parameter, amount, state)
+
+        return len(device_ids)
+
+    async def apply_rel_adjustment(
+        self, action: str, device_ids: list[str], parameter: str | None, amount: float
+    ) -> int:
+        """Make the requested adjustment to the specified devices."""
+
+        for did in device_ids:
+            state = self._hass.states.get(did)
+            if not state:
+                raise ValueError(f"Entity '{did}' does not exist")
+
+            if parameter not in state.attributes:
+                raise ValueError(
+                    f"Entity '{did}' does not have attribute '{parameter}'"
+                )
+
+            if isinstance(state.attributes[parameter], (float, int)):
+                raise TypeError(
+                    f"Entity '{did}' attribute '{parameter}' is not numeric"
+                )
+
+            new_amount = state.attributes[parameter] + amount
+            _LOGGER.debug(
+                "Changing %s %s from %s to %s",
+                did,
+                parameter,
+                state.attributes[parameter],
+                new_amount,
+            )
+            self._apply_abs_adjustment(parameter, new_amount, state)
+
+        return len(device_ids)
+
+    async def apply_action(self, action: str, device_ids: list[str]) -> int:
+        """Make the requested adjustment to the specified devices."""
+
+        for did in device_ids:
+            state = self._hass.states.get(did)
+            self._hass.services.has_service()
+
+            _LOGGER.debug("Calling %s.%s on %s", state.domain, action, did)
+            try:
+                await self._hass.services.async_call(
+                    state.domain, action, context=state.context, blocking=False
+                )
+            except ServiceNotFound as ex:
+                raise ValueError(
+                    f"No action {action} exists for {state.domain}"
+                ) from ex
+
+        return len(device_ids)
