@@ -12,12 +12,22 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import core
+from homeassistant.components.climate import (
+    SERVICE_SET_HUMIDITY,
+    SERVICE_SET_TEMPERATURE,
+)
 from homeassistant.components.device_automation import (
     DeviceAutomationType,
     async_get_device_automations,
 )
 from homeassistant.components.homeassistant import async_should_expose
-from homeassistant.const import CONF_ENTITY_ID, CONF_TYPE
+from homeassistant.components.media_player import SERVICE_VOLUME_SET
+from homeassistant.const import (
+    CONF_ENTITY_ID,
+    CONF_TYPE,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+)
 from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers import (
     area_registry as ar,
@@ -461,12 +471,34 @@ class HassIface:
         if state.state == "on" and abs(amount) < threshold:
             new_state = "off"
 
-        # Not actually async, just async compatible
-        self._hass.states.async_set(
-            entity_id=state.entity_id,
-            new_state=new_state,
-            attributes=attributes,
+        # Note that _hass.states.async_set will update the internal HA state but
+        # not actually change the device. Instead, we need to call the appropriate
+        # service based on the parameter being changed.
+
+        # Ugh. Heuristic. May need adjustment. What a mess. See e.g.
+        # homeassistant/components/alexa/handlers.py:async_api_set_range() for what
+        # other assistants have done. Maybe re-use some of that.
+        PARAM_TO_SVC = {
+            "temperature": SERVICE_SET_TEMPERATURE,
+            "humidity": SERVICE_SET_HUMIDITY,
+            "volume": SERVICE_VOLUME_SET,
+            # "mode" can refer to a variety of things depending on domain. Don't try to
+            # set that (yet)
+        }
+
+        if parameter in PARAM_TO_SVC:
+            svc = PARAM_TO_SVC[parameter]
+        elif new_state == "on":
+            svc = SERVICE_TURN_ON
+        elif new_state == "off":
+            svc = SERVICE_TURN_OFF
+
+        await self._hass.services.async_call(
+            state.domain,
+            service=svc,
             context=state.context,
+            service_data=attributes,
+            blocking=False,
         )
 
     async def apply_abs_adjustment(
