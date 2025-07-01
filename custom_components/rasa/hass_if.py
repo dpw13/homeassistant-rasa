@@ -578,7 +578,19 @@ class HassIface:
         for did in device_ids:
             state = self._hass.states.get(did)
 
-            _LOGGER.debug("Calling %s.%s on %s", state.domain, action, did)
+            if state is None:
+                # Some integrations may misbehave and return no states for the device ID.
+                # The gate controller and MQTT integration appear to show this behavior.
+                # Do our best with the information we have by extracting the domain from
+                # the device ID.
+                _LOGGER.warning("Device '%s' has no state. It may be disconnected", did)
+                domain = did.split(".")[0]
+                context = None
+            else:
+                domain = state.domain
+                context = state.context
+
+            _LOGGER.debug("Calling %s.%s on %s", domain, action, did)
             # TODO: you can actually 'turn_on' all entities in an area or on
             # a floor. It may make more sense to do things that way eventually
             # if performance is poor.
@@ -586,16 +598,14 @@ class HassIface:
             service_data = {CONF_ENTITY_ID: did}
             try:
                 await self._hass.services.async_call(
-                    state.domain,
+                    domain,
                     action,
-                    context=state.context,
+                    context=context,
                     service_data=service_data,
                     blocking=False,
                 )
             except ServiceNotFound as ex:
-                raise ValueError(
-                    f"No action {action} exists for {state.domain}"
-                ) from ex
+                raise ValueError(f"No action {action} exists for {domain}") from ex
             except vol.Invalid as ex:
                 # Service schema validation failure. We probably missed setting something.
                 raise ValueError(f"Could not {action} {did}") from ex
