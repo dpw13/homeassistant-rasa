@@ -425,6 +425,8 @@ class DeviceAmountForm(DeviceLocationForm):
             # Apply percentage or units
             ret["amount"] *= mult
 
+        logger.debug("validate_amount %s -> %s", candidate, ret)
+
         return ret
 
     def _next_slot(self, current_slots: dict[str, Any]) -> str | None:
@@ -441,7 +443,8 @@ class DeviceAmountForm(DeviceLocationForm):
 
         if current_slots["action"] in ("set_absolute", "set_relative"):
             # For setting values we need the amount and parameter.
-            if not current_slots["amount"]:
+            # Note we can't test for truthiness because 0.0 is a valid value
+            if current_slots["amount"] is None:
                 return "amount"
             if not current_slots["parameter"]:
                 # We weren't able to determine a parameter to adjust from the

@@ -492,11 +492,11 @@ class HassIface:
                 raise ValueError(f"Entity '{did}' does not exist")
 
             if parameter not in state.attributes:
-                raise ValueError(
-                    f"Entity '{did}' does not have attribute '{parameter}'"
-                )
+                _LOGGER.warning("Entity '%s' has no attribute '%s'", did, parameter)
+                continue
 
-            if not isinstance(state.attributes[parameter], (float, int)):
+            current_value = state.attributes[parameter] or 0.0
+            if not isinstance(current_value, (float, int)):
                 # TODO: when setting brightness on lights that aren't dimmable, we
                 # might consider turning them on above a certain threshold.
                 _LOGGER.warning(
