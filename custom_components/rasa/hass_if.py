@@ -392,6 +392,8 @@ class HassIface:
         ]
         actions = valid_actions
 
+        _LOGGER.debug("Actions: %s", actions)
+
         # TODO: could make this dynamically call hass to query entities
         matching_entities = set()
         matching_areas = set()
