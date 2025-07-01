@@ -248,19 +248,11 @@ class DeviceAmountForm(DeviceLocationForm):
 
     # Format: dict{txt: (Absolute, Amount)}
     ACTION_DICT = {
-        "turn up": ("set_relative", 0.20),
-        "turn down": ("set_relative", 0.20),
-        "turn on": ("set_absolute", 1.0),
-        "turn off": ("set_absolute", 0.0),
-        "open": ("set_absolute", 1.0),
-        "close": ("set_absolute", 0.0),
-        "mute": ("set_absolute", 0.0),
-        "unmute": (
-            "set_absolute",
-            0.5,
-        ),  # TODO: restore previous volume? Maybe mute is special?
-        # TODO: there are likely other device-specific actions like play, stop, etc
-        # TODO: check whether an action applies to a specific device?
+        "turn_up": ("set_relative", 0.20),
+        "turn_down": ("set_relative", 0.20),
+        "increase": ("set_relative", 0.20),
+        "decrease": ("set_relative", 0.20),
+        "set": ("set_absolute", 0.0),
         # TODO: relative amount depends on what you're adjusting. A fan might be turned up by 25%,
         #   lights by 15%, and temperature by 2 degrees.
     }
@@ -304,7 +296,12 @@ class DeviceAmountForm(DeviceLocationForm):
 
         if current_slots["action"]:
             # Actions are snake case
-            slots_to_set["action"] = current_slots["action"].replace(" ", "_")
+            action = current_slots["action"].replace(" ", "_")
+            if action in self.ACTION_DICT:
+                action, amount = self.ACTION_DICT[action]
+                # TODO: get relative amounts
+                slots_to_set["amount"] = amount
+            slots_to_set["action"] = action
         if current_slots["device"]:
             device: str = current_slots["device"]
             if device.endswith("s"):
