@@ -195,6 +195,8 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         # Alternatively it looks like `addConversationTrackerEvents` will automatically
         # create a new session if needed.
         if len(chat_log.content) == 2:  # TODO: HACK
+            # Update entities
+            await self._action_server.update()
             msg_req = rasa_client.AddConversationTrackerEventsRequest(
                 rasa_client.Event(
                     rasa_client.SessionStartedEvent.from_dict(

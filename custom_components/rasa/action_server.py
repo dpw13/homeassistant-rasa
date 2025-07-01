@@ -42,6 +42,10 @@ class RasaActionServer:
         loader = AppLoader(factory=self._create_server)
         self._hass.async_create_background_task(self._run_server(loader), "rasa-action")
 
+    async def update(self) -> None:
+        """Update HA data."""
+        await self._iface.load()
+
     def _create_server(self):
         action_executor = ActionExecutor()
         action_executor.register_package(actions)
