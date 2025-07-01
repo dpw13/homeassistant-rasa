@@ -87,9 +87,9 @@ class DeviceLocationForm(FormValidationAction):
             # actually set.
             return {"multiple": True, "location": ""}
 
-        loc = _HASS_IF.find_location_by_name(candidate)
-        if loc is not None:
-            return {"location": loc["id"]}
+        loc_ids = _HASS_IF.find_location_by_name(candidate)
+        if loc_ids:
+            return {"location": loc_ids}
 
         raise UnknownName(f"Sorry, I don't know the location {candidate}")
 
@@ -115,9 +115,9 @@ class DeviceLocationForm(FormValidationAction):
 
         slots_to_set: dict[str, Any] = {}
         # Validate location first.
-        if tracker.slots["location"]:
+        if current_slots["location"]:
             try:
-                updates = self.validate_location(tracker.slots["location"])
+                updates = self.validate_location(current_slots["location"])
                 # Apply changes to the current working set of slots and keep track of
                 # which slots need to be set on the server.
                 slots_to_set.update(updates)
@@ -148,7 +148,11 @@ class DeviceLocationForm(FormValidationAction):
         if len(entity_ids) == 0:
             filters = []
             if current_slots["location"]:
-                filters.append("in " + current_slots["location"])
+                if isinstance(current_slots["location"], str):
+                    locs = [current_slots["location"]]
+                else:
+                    locs = current_slots["location"]
+                filters.append("in " + ", ".join(locs))
 
             if current_slots["device"] is not None:
                 filters.append("called " + current_slots["device"])
@@ -242,9 +246,9 @@ class DeviceAmountForm(DeviceLocationForm):
 
         slots_to_set: dict[str, Any] = {}
         # Validate location first.
-        if tracker.slots["location"]:
+        if current_slots["location"]:
             try:
-                updates = self.validate_location(tracker.slots["location"])
+                updates = self.validate_location(current_slots["location"])
                 # Apply changes to the current working set of slots and keep track of
                 # which slots need to be set on the server.
                 slots_to_set.update(updates)
@@ -281,7 +285,11 @@ class DeviceAmountForm(DeviceLocationForm):
         if len(entity_ids) == 0:
             filters = []
             if current_slots["location"]:
-                filters.append("in " + current_slots["location"])
+                if isinstance(current_slots["location"], str):
+                    locs = [current_slots["location"]]
+                else:
+                    locs = current_slots["location"]
+                filters.append("in " + ", ".join(locs))
 
             if current_slots["device"] is not None:
                 filters.append("called " + current_slots["device"])

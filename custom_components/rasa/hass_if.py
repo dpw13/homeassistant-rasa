@@ -316,13 +316,16 @@ class HassIface:
         # We weren't able to filter this entity away
         return True
 
-    def find_location_by_name(self, loc: str) -> dict[str, Any] | None:
-        """Return the location with the specified name or return None if not found."""
+    def find_location_by_name(self, loc: str) -> list[str] | None:
+        """Return the location IDs with the specified name."""
+        # If a location name matches both floor and area, use both IDs.
+
+        ret = []
         if loc in self._area_by_name:
-            return self._area_by_name[loc]
+            ret.append(self._area_by_name[loc]["id"])
         if loc in self._floor_by_name:
-            return self._floor_by_name[loc]
-        return None
+            ret.append(self._floor_by_name[loc]["id"])
+        return ret
 
     def get_matching_entities(
         self, locations: list[str], entities: list[str], attributes: list[str]
