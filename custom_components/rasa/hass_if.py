@@ -456,15 +456,15 @@ class HassIface:
         # By default assume we don't need to change the state.
         new_state = state.state
 
+        service_data = {CONF_ENTITY_ID: state.entity_id}
         if parameter in state.attributes:
             # Note that we check for "approximately off", or less than 1% on.
             threshold = 1
-            attributes = {parameter: amount}
+            service_data[parameter] = amount
         else:
             # Set a threshold of 20%
             # TODO: I really hate the inconsistent use of percent units
             threshold = 20
-            attributes = {}
 
         if state.state == "off" and amount >= threshold:
             new_state = "on"
@@ -497,7 +497,7 @@ class HassIface:
             state.domain,
             service=svc,
             context=state.context,
-            service_data=attributes,
+            service_data=service_data,
             blocking=False,
         )
 
