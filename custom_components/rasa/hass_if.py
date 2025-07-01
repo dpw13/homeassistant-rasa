@@ -436,20 +436,34 @@ class HassIface:
         amount: Any,
         state: core.State,
     ):
-        """Make the requested adjustment to the specified device. State must be pre-filled."""
+        """Make the requested adjustment to the specified device. State must be pre-filled.
+
+        Note that this method can tolerate the device not having the attribute present. If
+        the attribute is missing, we allow changing the state to on or off based on the intended
+        value.
+        """
 
         # By default assume we don't need to change the state.
         new_state = state.state
-        if state.state == "off" and amount > 0:
-            new_state = "on"
-        if state.state == "on" and abs(amount) < 0.01:
+
+        if parameter in state.attributes:
             # Note that we check for "approximately off", or less than 1% on.
+            threshold = 1
+            attributes = {parameter: amount}
+        else:
+            # Set a threshold of 20%
+            # TODO: I really hate the inconsistent use of percent units
+            threshold = 20
+            attributes = {}
+
+        if state.state == "off" and amount >= threshold:
+            new_state = "on"
+        if state.state == "on" and abs(amount) < threshold:
             new_state = "off"
 
-        attributes = {parameter: amount}
-
-        await self._hass.states.async_set(
-            state.domain,
+        # Not actually async, just async compatible
+        self._hass.states.async_set(
+            entity_id=state.entity_id,
             new_state=new_state,
             attributes=attributes,
             context=state.context,
@@ -466,15 +480,14 @@ class HassIface:
             if not state:
                 raise ValueError(f"Entity '{did}' does not exist")
 
-            if parameter not in state.attributes:
-                _LOGGER.warning("Entity '%s' has no attribute '%s'", did, parameter)
-                continue
+            # We allow state changes when the value attribute is missing
+            current_value = state.attributes.get(parameter, 0.0)
 
             _LOGGER.debug(
                 "Changing %s %s from %s to %s",
                 did,
                 parameter,
-                state.attributes[parameter],
+                current_value,
                 amount,
             )
             await self._apply_abs_adjustment(parameter, amount, state)
@@ -494,15 +507,23 @@ class HassIface:
                 raise ValueError(f"Entity '{did}' does not exist")
 
             if parameter not in state.attributes:
-                _LOGGER.warning("Entity '%s' has no attribute '%s'", did, parameter)
-                continue
+                _LOGGER.info(
+                    "Entity '%s' has no attribute '%s', will try to use state",
+                    did,
+                    parameter,
+                )
 
-            current_value = state.attributes[parameter] or 0.0
+            current_value = state.attributes.get(parameter, None)
+            if current_value is None:
+                current_value = 0.0
+
             if not isinstance(current_value, (float, int)):
-                # TODO: when setting brightness on lights that aren't dimmable, we
-                # might consider turning them on above a certain threshold.
+                # We can't perform a relative adjustment if the original value
+                # isn't numeric
                 _LOGGER.warning(
-                    "Entity '%s' attribute '%s' is not numeric", did, parameter
+                    "Entity '%s' attribute '%s' is not numeric",
+                    did,
+                    parameter,
                 )
                 continue
 
@@ -511,7 +532,7 @@ class HassIface:
                 "Changing %s %s from %s to %s",
                 did,
                 parameter,
-                state.attributes[parameter],
+                state.attributes.get(parameter, None),
                 new_amount,
             )
             await self._apply_abs_adjustment(parameter, new_amount, state)
