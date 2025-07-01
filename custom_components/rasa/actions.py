@@ -72,7 +72,7 @@ class DeviceLocationForm(FormValidationAction):
         """Name."""
         return "_helper_device_location_form"
 
-    async def validate_location(self, candidate: str) -> dict[str, Any]:
+    def validate_location(self, candidate: str) -> dict[str, Any]:
         """Validate the requested location.
 
         Candidate location should already be lowercased.

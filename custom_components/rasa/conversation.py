@@ -96,6 +96,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         self._action_server = RasaActionServer(
             hass, entry.data.get("action_port", 5055)
         )
+        self._last_ts = 0.0
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to Home Assistant."""
@@ -147,6 +148,31 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
 
         await self._action_server.launch()
 
+    def _dump_tracker_evts(self, tracker: rasa_client.Tracker | None):
+        if tracker and tracker.events:
+            for ev in tracker.events:
+                if ev.actual_instance.timestamp <= self._last_ts:
+                    continue
+                self._last_ts = ev.actual_instance.timestamp
+                data = ev.to_dict()
+                # Flatten
+                data.update(data["metadata"])
+                pairs = [
+                    f"{k}={v}"
+                    for k, v in data.items()
+                    if k
+                    in (
+                        "name",
+                        "value",
+                        "utter_action",
+                        "policy",
+                        "confidence",
+                        "text",
+                        "intent",
+                    )
+                ]
+                _LOGGER.info("-- %s evt: %s", data["event"], " ".join(pairs))
+
     # This is where the actual conversation entity functionality is
     async def _async_handle_message(
         self,
@@ -191,12 +217,14 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                 # sender=user_input.context.user_id
             ),
         )
+        self._dump_tracker_evts(tracker)
         if tracker.latest_message and tracker.latest_message.intent:
             rasa_intent = tracker.latest_message.intent
             _LOGGER.info("<- %f intent: %s", rasa_intent.confidence, rasa_intent.name)
 
         prediction: rasa_client.PredictResultScoresInner | None = None
         messages: list[str] = []
+        last_ts = 0.0
         while prediction is None or prediction.action != "action_listen":
             # Predict
             predict_result = await self._tracker_api.predict_conversation_action(
@@ -207,6 +235,8 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                     _LOGGER.info("<- %f: %s", score.score, score.action)
             else:
                 raise IntegrationError("Received empty prediction result from server")
+
+            self._dump_tracker_evts(predict_result.tracker)
 
             # Scores are sorted descending before being returned.
             prediction = predict_result.scores[0]
@@ -225,6 +255,8 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             )
             if exec_result.messages:
                 messages.extend([m.text for m in exec_result.messages if m.text])
+
+            self._dump_tracker_evts(exec_result.tracker)
 
         _LOGGER.info("<- %d messages", len(messages))
         if messages:
