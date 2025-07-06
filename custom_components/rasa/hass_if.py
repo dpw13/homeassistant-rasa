@@ -426,9 +426,11 @@ class HassIface:
 
         # Remove set_relative and set_absolute; these are handled differently and
         # not actions as HA sees them.
+        # ... except when they are like for volume_set or volume_up/down
         valid_actions = [
             a for a in actions if a not in ("set_relative", "set_absolute")
         ]
+        is_adjust = "set_relative" in actions or "set_absolute" in actions
         actions = valid_actions
 
         _LOGGER.debug("Actions: %s", actions)
@@ -451,8 +453,14 @@ class HassIface:
                     if actions:
                         # Only add matching actions
                         ent_actions = self._match_actions(entity, actions)
-                        # if no actions match, don't add entity
-                        if not ent_actions:
+                        # if no actions match, don't add entity unless the user wants to set
+                        # an attribute.
+                        if not ent_actions and not is_adjust:
+                            _LOGGER.debug(
+                                "Skipping %s because no actions match %s",
+                                entity_id,
+                                actions,
+                            )
                             continue
                         matching_actions.update(ent_actions)
                     else:
