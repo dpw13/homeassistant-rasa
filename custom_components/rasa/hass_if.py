@@ -54,6 +54,16 @@ INTERESTING_ATTRIBUTES = {
     "media_album_name",
 }
 
+# Some of the above are not named the way a person would name then when talking.
+# Map the informal language to the HA attribute name.
+ATTRIBUTE_MAP = {
+    "volume": "volume_level",
+    "position": "current_position",
+    "title": "media_title",
+    "artist": "media_artist",
+    "album_name": "media_album_name",
+}
+
 
 async def _get_areas(
     hass: core.HomeAssistant, area_ids: Iterable[Any]
@@ -184,7 +194,7 @@ async def _get_exposed_entities(
             # Just pretend media players have a volume even though all the adjustments
             # are done through special service calls.
             if state.domain in ("media_player", "remote"):
-                info["attributes"].append("volume")
+                info["attributes"].append("volume_level")
 
             # _LOGGER.debug("Entity %s: %s", state.entity_id, info)
             entities[state.entity_id] = info
@@ -416,11 +426,14 @@ class HassIface:
         _LOGGER.debug("Matching entities: %s", slots)
 
         if isinstance(slots["parameter"], str):
-            params = [slots["parameter"]]
+            attr_list = [slots["parameter"]]
         elif slots["parameter"] is None:
-            params = []
+            attr_list = []
         else:
-            params = slots["parameter"]
+            attr_list = slots["parameter"]
+
+        # Map common language to formal attribute names
+        attributes = [ATTRIBUTE_MAP.get(a, a) for a in attr_list]
 
         if isinstance(slots["action"], str):
             actions = [slots["action"]]
@@ -448,7 +461,7 @@ class HassIface:
         for area_id in area_ids:
             for entity_id in self._get_entities_by_area(area_id):
                 if self._entity_is_candidate(
-                    entity_id, slots["device"], params, actions
+                    entity_id, slots["device"], attributes, actions
                 ):
                     entity = self._entity_by_id[entity_id]
 
@@ -472,10 +485,10 @@ class HassIface:
                         # Accumulate all actions for matching entities
                         matching_actions.update(entity["action"])
 
-                    if params:
+                    if attributes:
                         # Only add matching parameters if parameters were specified.
                         matching_attributes.update(
-                            a for a in entity["attributes"] if a in params
+                            a for a in entity["attributes"] if a in attributes
                         )
                     else:
                         # If no parameters were specified, collect all attributes
@@ -528,7 +541,7 @@ class HassIface:
         PARAM_TO_SVC = {
             "temperature": SERVICE_SET_TEMPERATURE,
             "humidity": SERVICE_SET_HUMIDITY,
-            "volume": SERVICE_VOLUME_SET,
+            "volume_level": SERVICE_VOLUME_SET,
             # "mode" can refer to a variety of things depending on domain. Don't try to
             # set that (yet)
         }
@@ -539,6 +552,8 @@ class HassIface:
             svc = SERVICE_TURN_ON
         elif new_state == "off":
             svc = SERVICE_TURN_OFF
+        else:
+            raise ValueError(f"I don't know how to adjust the {parameter} yet")
 
         await self._hass.services.async_call(
             state.domain,
