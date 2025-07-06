@@ -180,6 +180,12 @@ async def _get_exposed_entities(
                 if attr_name in INTERESTING_ATTRIBUTES
             ]
 
+            # HACK:
+            # Just pretend media players have a volume even though all the adjustments
+            # are done through special service calls.
+            if state.domain in ("media_player", "remote"):
+                info["attributes"].append("volume")
+
             # _LOGGER.debug("Entity %s: %s", state.entity_id, info)
             entities[state.entity_id] = info
 
