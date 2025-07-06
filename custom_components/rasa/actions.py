@@ -64,17 +64,18 @@ def _get_if_single(slots: dict[str, Any], elements: set[str], name: str):
 def _english_list(objs: list[Any], join: str = "and") -> str:
     """Create an english-language sequence of things."""
     count = len(objs)
+    # Handle sets as well as tuples and lists
+    obj_list = sorted(objs)
     if count == 0:
         # Shouldn't happen
         return ""
     if count == 1:
-        # Handle sets as well as tuples and lists
-        return "".join(objs)
+        return str(obj_list[0])
     if count == 2:
-        return f" {join} ".join(objs)
+        return f" {join} ".join(obj_list)
 
     # Oxford comma 4lyfe
-    return ", ".join(objs[:-1]) + f", {join} " + str(objs[-1])
+    return ", ".join(obj_list[:-1]) + f", {join} " + str(obj_list[-1])
 
 
 class DeviceLocationForm(FormValidationAction):

@@ -125,6 +125,12 @@ async def _get_exposed_entities(
 
     _LOGGER.debug("Checking all entities for exposure to %s", assistant)
 
+    # Check services for all domains.
+    # DO NOT MODIFY THIS DICT! We are using it in-place for efficiency.
+    svcs = hass.services.async_services_internal()
+    # TODO: we are throwing away schema information here
+    actions = {d: tuple(s.keys()) for d, s in svcs.items()}
+
     for state in sorted(hass.states.async_all(), key=attrgetter("name")):
         if not async_should_expose(hass, assistant, state.entity_id):
             continue
@@ -132,7 +138,6 @@ async def _get_exposed_entities(
         entity_entry = entity_registry.async_get(state.entity_id)
         names = [state.name.lower()]
         area_ids = []
-        actions = {}
 
         if entity_entry is not None:
             names.extend(a.lower() for a in entity_entry.aliases)
@@ -154,22 +159,20 @@ async def _get_exposed_entities(
                     else:
                         entities_by_area[device.area_id].append(state.entity_id)
 
-                actions_map = await async_get_device_automations(
-                    hass, DeviceAutomationType.ACTION, (entity_entry.device_id,)
-                )
-                # async_get_device_automations returns actions for all device IDs, but we
-                # only care about one right now. Restructure into dict by keying on
-                # the action name.
-                # It doesn't appear that use of `CONF_TYPE` is *enforced* so this could break
-                # for some devices.
-                actions = {a[CONF_TYPE]: a for a in actions_map[entity_entry.device_id]}
+                # TODO:
+                # async_get_device_automations returns something that isn't the services
+                # associated with the entity and isn't what's listed for "automations" in
+                # the web UI. It's unclear exactly what the distinction is between
+                # async_get_device_automations and services. Instead, we query all services
+                # registered to each domain and reference those instead.
 
             info: dict[str, Any] = {
                 "names": names,
                 "domain": state.domain,
                 "platform": entity_entry.platform,
                 "area_ids": area_ids,
-                "actions": actions,
+                # Some entities have no actions, like read-only sensors
+                "action": actions.get(state.domain, []),
             }
 
             info["attributes"] = [
@@ -261,9 +264,14 @@ class HassIface:
         self._area_by_name = _reverse_map(self._area_by_id)
         self._floor_by_name = _reverse_map(self._floor_by_id)
 
-        _LOGGER.info("Areas: %s", self._area_by_name.keys())
-        _LOGGER.info("Floors: %s", self._floor_by_name.keys())
-        _LOGGER.info("Entities: %s", self._entity_by_name.keys())
+        actions = set()
+        for ent in self._entity_by_id.values():
+            actions.update(ent["action"])
+
+        _LOGGER.debug("Areas: %s", self._area_by_name.keys())
+        _LOGGER.debug("Floors: %s", self._floor_by_name.keys())
+        _LOGGER.debug("Entities: %s", self._entity_by_name.keys())
+        _LOGGER.debug("Actions: %s", actions)
 
     def get_location_by_id(self, loc_id: str) -> str:
         """Get the location name for the location ID."""
@@ -322,8 +330,8 @@ class HassIface:
                 return False
 
         if actions:
-            if entity["actions"]:
-                if all(act not in actions for act in entity["actions"]):
+            if entity["action"]:
+                if all(act not in actions for act in entity["action"]):
                     # No overlap between specified actions and device.
                     return False
             else:
@@ -432,11 +440,11 @@ class HassIface:
                     if actions:
                         # Only add matching actions
                         matching_actions.update(
-                            a for a in entity["actions"] if a in actions
+                            a for a in entity["action"] if a in actions
                         )
                     else:
                         # Accumulate all matching actions
-                        matching_actions.update(entity["actions"])
+                        matching_actions.update(entity["action"])
 
         return matching_actions, matching_areas, matching_entities, matching_attributes
 
