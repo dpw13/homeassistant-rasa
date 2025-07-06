@@ -61,8 +61,24 @@ def _get_if_single(slots: dict[str, Any], elements: set[str], name: str):
         slots[name] = element
 
 
+def _english_list(objs: list[Any], join: str = "and") -> str:
+    """Create an english-language sequence of things."""
+    count = len(objs)
+    if count == 0:
+        # Shouldn't happen
+        return ""
+    if count == 1:
+        # Handle sets as well as tuples and lists
+        return "".join(objs)
+    if count == 2:
+        return f" {join} ".join(objs)
+
+    # Oxford comma 4lyfe
+    return ", ".join(objs[:-1]) + f", {join} " + str(objs[-1])
+
+
 class DeviceLocationForm(FormValidationAction):
-    """Docstring."""
+    """Form for identifying a specific device in a particular location."""
 
     def name(self) -> str:
         """Name."""
@@ -89,6 +105,91 @@ class DeviceLocationForm(FormValidationAction):
 
         raise UnknownName(f"Sorry, I don't know the location {candidate}")
 
+    @staticmethod
+    def get_slots_from_tracker(tracker: Tracker) -> dict[str, Any]:
+        """Extract current known slots from teh tracker.
+
+        Lowercase all text.
+        """
+        current_slots: dict[str, Any] = {}
+        for k, v in tracker.slots.items():
+            if isinstance(v, str):
+                current_slots[k] = v.lower()
+            else:
+                current_slots[k] = v
+
+        return current_slots
+
+    def _extract_location(self, candidate_loc: str) -> dict[str, Any]:
+        """Interpret the location and return a set of slots to update.
+
+        Throws UnknownName if no location was found.
+        """
+
+        if candidate_loc:
+            return self.validate_location(candidate_loc)
+        return {}
+
+    def _extract_device(self, candidate_dev: str) -> dict[str, Any]:
+        """Interpret a device name.
+
+        Attempt to detect a plural noun or phrase and return the device as a list.
+        """
+
+        slots_to_set: dict[str, Any] = {}
+        if candidate_dev:
+            device: str = candidate_dev
+            # `device` should be list of names
+            slots_to_set["device"] = [device]
+            if device.endswith("s"):
+                singular = device.rstrip("s")
+                slots_to_set["multiple"] = True
+                # Look for the singular form of the name as well
+                slots_to_set["device"].append(singular)
+
+        return slots_to_set
+
+    def _find_alt(
+        self, current_slots: dict[str, Any], exclude: list[str]
+    ) -> str | None:
+        """Find device matches leaving out one or more constraints.
+
+        Useful if we find no matches and want to present alternatives.
+        """
+        alt_slots = {k: v for k, v in current_slots.items() if k not in exclude}
+        alt_slots.update({k: {} for k in exclude})
+        actions, location_ids, entity_ids, parameters = _HASS_IF.match_entities(
+            alt_slots
+        )
+
+        if len(entity_ids) == 0:
+            return None
+
+        descr = []
+        # TODO: not sure how much context to give on what we searched for.
+        # Let's stick with just device for now to keep things simple.
+        if "device" not in exclude and current_slots["device"]:
+            descr.append("called " + _english_list(current_slots["device"], "or"))
+
+        # TODO: this mirrors the "filters" functionality reproduced in both
+        # `run` methods below. Refactor?
+        # We only print this info if excluding the constraint produced more
+        # results. That's why we check for both exclusion and the existence of
+        # a previously set value.
+        if "location" in exclude and current_slots["location"]:
+            descr.append("in " + _english_list(location_ids))
+        if "action" in exclude and current_slots["action"]:
+            if actions:
+                descr.append("that can " + _english_list(actions, "or"))
+            else:
+                descr.append("with no actions")
+        if "parameter" in exclude and current_slots["parameter"]:
+            if parameters:
+                descr.append("with a " + _english_list(parameters))
+            else:
+                descr.append("with no parameters")
+        return f"However I did find {len(entity_ids)} devices {' '.join(descr)}"
+
     async def run(
         self,
         dispatcher: CollectingDispatcher,
@@ -101,34 +202,17 @@ class DeviceLocationForm(FormValidationAction):
         We need to validate all of these at the same time, though the location can be validated
         first.
         """
-
-        current_slots: dict[str, Any] = {}
-        for k, v in tracker.slots.items():
-            if isinstance(v, str):
-                current_slots[k] = v.lower()
-            else:
-                current_slots[k] = v
+        current_slots = self.get_slots_from_tracker(tracker)
 
         slots_to_set: dict[str, Any] = {}
-        # Validate location first.
-        if current_slots["location"]:
-            try:
-                updates = self.validate_location(current_slots["location"])
-                # Apply changes to the current working set of slots and keep track of
-                # which slots need to be set on the server.
-                slots_to_set.update(updates)
-            except UnknownName as ex:
-                return [BotUttered(str(ex))]
 
-        if current_slots["device"]:
-            device: str = current_slots["device"]
-            # `device` should be list of names
-            slots_to_set["device"] = [device]
-            if device.endswith("s"):
-                singular = device.rstrip("s")
-                slots_to_set["multiple"] = True
-                # Look for the singular form of the name as well
-                slots_to_set["device"].append(singular)
+        # Validate location first.
+        try:
+            slots_to_set.update(self._extract_location(current_slots["location"]))
+        except UnknownName as ex:
+            return [BotUttered(str(ex))]
+
+        slots_to_set.update(self._extract_device(current_slots["device"]))
 
         # Apply any slot changes we've accumulated so far
         current_slots.update(slots_to_set)
@@ -151,17 +235,25 @@ class DeviceLocationForm(FormValidationAction):
                     locs = [current_slots["location"]]
                 else:
                     locs = current_slots["location"]
-                filters.append("in " + ", ".join(locs))
+                filters.append("in " + _english_list(locs))
 
             if current_slots["device"] is not None:
-                filters.append("called " + ", ".join(current_slots["device"]))
+                filters.append("called " + _english_list(current_slots["device"]))
 
             if current_slots["parameter"] is not None:
                 filters.append("with a " + current_slots["parameter"])
 
             filter_msg = " ".join(filters)
             logger.warning("no devices found %s", filter_msg)
-            response = BotUttered(f"Sorry, I don't know of any devices {filter_msg}.")
+            msg = f"Sorry, I don't know of any devices {filter_msg}."
+
+            # TODO: we might want this extra search optional, it could get tedious.
+            # For now only find alternates in situations that can get easily confused.
+            alt_help = self._find_alt(current_slots, ["parameter", "action"])
+            if alt_help is not None:
+                msg += " " + alt_help
+
+            response = BotUttered(msg)
 
             # TODO: what do we do if nothing is found? Can we discard just one constraint?
             return [response, AllSlotsReset()]
@@ -242,7 +334,11 @@ class DeviceLocationForm(FormValidationAction):
 
 
 class DeviceAmountForm(DeviceLocationForm):
-    """Common functions for validating and parsing amounts."""
+    """Form for performing a specific action on a particular device in a location.
+
+    An amount may optionally be specified for setting an attribute on a device like
+    brightness or volume.
+    """
 
     def name(self) -> str:
         """Docstring."""
@@ -250,14 +346,32 @@ class DeviceAmountForm(DeviceLocationForm):
 
     # Format: dict{txt: (Absolute, Amount)}
     ACTION_DICT = {
-        "turn_up": ("set_relative", 0.20),
-        "turn_down": ("set_relative", 0.20),
-        "increase": ("set_relative", 0.20),
-        "decrease": ("set_relative", 0.20),
+        "turn_up": ("set_relative", 25),
+        "turn_down": ("set_relative", 25),
+        "increase": ("set_relative", 25),
+        "decrease": ("set_relative", 25),
         "set": ("set_absolute", 0.0),
         # TODO: relative amount depends on what you're adjusting. A fan might be turned up by 25%,
         #   lights by 15%, and temperature by 2 degrees.
     }
+
+    def _extract_action(self, candidate_act: str, amount: str) -> dict[str, Any]:
+        """Attempt to interpret an action phrase.
+
+        Actions are snake case and type str.
+        """
+        slots_to_set: dict[str, Any] = {}
+
+        if candidate_act:
+            # Actions are snake case
+            action = candidate_act.replace(" ", "_")
+            if action in self.ACTION_DICT:
+                action, amount = self.ACTION_DICT[action]
+                if amount is None:
+                    slots_to_set["amount"] = amount
+            slots_to_set["action"] = action
+
+        return slots_to_set
 
     async def run(
         self,
@@ -274,47 +388,23 @@ class DeviceAmountForm(DeviceLocationForm):
 
         # TODO: there's a lot of repetition here. There might be a better way of structuring this.
 
-        current_slots: dict[str, Any] = {}
-        for k, v in tracker.slots.items():
-            if isinstance(v, str):
-                current_slots[k] = v.lower()
-            else:
-                current_slots[k] = v
+        current_slots = self.get_slots_from_tracker(tracker)
 
         slots_to_set: dict[str, Any] = {}
+
         # Validate location first.
-        if current_slots["location"]:
-            try:
-                updates = self.validate_location(current_slots["location"])
-                # Apply changes to the current working set of slots and keep track of
-                # which slots need to be set on the server.
-                slots_to_set.update(updates)
-            except UnknownName as ex:
-                return [BotUttered(str(ex))]
+        try:
+            slots_to_set.update(self._extract_location(current_slots["location"]))
+        except UnknownName as ex:
+            return [BotUttered(str(ex))]
 
-        if current_slots["action"]:
-            # Actions are snake case
-            action = current_slots["action"].replace(" ", "_")
-            if action in self.ACTION_DICT:
-                action, amount = self.ACTION_DICT[action]
-                if current_slots["amount"] is None:
-                    slots_to_set["amount"] = amount
-            slots_to_set["action"] = action
-
-        if isinstance(current_slots["amount"], str):
-            # Attempt to extract amount if the slot is set
-            updates = self.validate_amount(current_slots, current_slots["amount"])
-            slots_to_set.update(updates)
-
-        if isinstance(current_slots["device"], str):
-            device: str = current_slots["device"]
-            # `device` should be list of names
-            slots_to_set["device"] = [device]
-            if device.endswith("s"):
-                singular = device.rstrip("s")
-                slots_to_set["multiple"] = True
-                # Look for the singular form of the name as well
-                slots_to_set["device"].append(singular)
+        slots_to_set.update(
+            self._extract_action(current_slots["action"], current_slots["amount"])
+        )
+        slots_to_set.update(
+            self._extract_amount(current_slots["amount"], current_slots["action"])
+        )
+        slots_to_set.update(self._extract_device(current_slots["device"]))
 
         # Apply any slot changes we've accumulated so far
         current_slots.update(slots_to_set)
@@ -340,20 +430,30 @@ class DeviceAmountForm(DeviceLocationForm):
                     locs = [current_slots["location"]]
                 else:
                     locs = current_slots["location"]
-                filters.append("in " + ", ".join(locs))
+                filters.append("in " + _english_list(locs))
 
             if current_slots["device"] is not None:
-                filters.append("called " + ", ".join(current_slots["device"]))
+                filters.append("called " + _english_list(current_slots["device"]))
 
             if current_slots["parameter"] is not None:
                 filters.append("with a " + current_slots["parameter"])
 
             if current_slots["action"] is not None:
-                filters.append("that we can " + current_slots["action"])
+                filters.append(
+                    "that we can " + current_slots["action"].replace("_", " ")
+                )
 
             filter_msg = " ".join(filters)
             logger.warning("no devices found %s", filter_msg)
-            response = BotUttered(f"Sorry, I don't know of any devices {filter_msg}.")
+            msg = f"Sorry, I don't know of any devices {filter_msg}."
+
+            # TODO: we might want this extra search optional, it could get tedious.
+            # For now only find alternates in situations that can get easily confused.
+            alt_help = self._find_alt(current_slots, ["parameter", "action"])
+            if alt_help is not None:
+                msg += " " + alt_help
+
+            response = BotUttered(msg)
 
             # TODO: what do we do if nothing is found? Can we discard just one constraint?
             return [response, AllSlotsReset()]
@@ -399,22 +499,24 @@ class DeviceAmountForm(DeviceLocationForm):
 
         return ret
 
-    def validate_amount(
-        self, current_slots: dict[str, Any], candidate: str
-    ) -> dict[str, Any]:
-        """Validate and parse the amount."""
-        ret: dict[str, Any] = {"amount": candidate}
+    def _extract_amount(self, candidate_amount: str, action: str) -> dict[str, Any]:
+        """Validate and parse the amount.
+
+        Implies 'set_absolute' if an amount was parsed but only if the
+        action is not already set.
+        """
+        ret: dict[str, Any] = {"amount": candidate_amount}
         mult = 1.0
 
-        if isinstance(candidate, str):
-            words = candidate.split(" ")
+        if isinstance(candidate_amount, str):
+            words = candidate_amount.split(" ")
             for word in words:
                 if word == "percent":
                     mult = 0.01
                 else:
                     try:
                         ret["amount"] = float(word)
-                        if current_slots["action"] is None:
+                        if action is None:
                             # Implicitly set absolute action when parsing amount
                             ret["action"] = "set_absolute"
                     except ValueError:
@@ -424,7 +526,7 @@ class DeviceAmountForm(DeviceLocationForm):
             # Apply percentage or units
             ret["amount"] *= mult
 
-        logger.debug("validate_amount %s -> %s", candidate, ret)
+        logger.debug("validate_amount %s -> %s", candidate_amount, ret)
 
         return ret
 
