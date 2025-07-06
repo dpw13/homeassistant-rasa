@@ -298,6 +298,25 @@ class HassIface:
         # No locations found
         raise ValueError(f"Location {location} not found")
 
+    @staticmethod
+    def _match_actions(entity: dict[str, Any], actions: list[str]) -> set[str]:
+        """Determine whether this action can be performed on this entity.
+
+        Returns the canonical action name if a match is found.
+        """
+        valid_actions = set()
+        for action in actions:
+            domain = entity["domain"]
+            # A generic action like "stop" can be implemented as "stop_cover" for
+            # the cover class or "media_stop" for the media player class. This heuristic
+            # tries both to try to find a match.
+            action_candidates = [action, f"{action}_{domain}", f"{domain}_{action}"]
+            for c in action_candidates:
+                if c in entity["action"]:
+                    valid_actions.add(c)
+
+        return valid_actions
+
     def _entity_is_candidate(
         self,
         entity_id: str,
@@ -330,11 +349,9 @@ class HassIface:
                 return False
 
         if actions:
-            if entity["action"]:
-                if all(act not in actions for act in entity["action"]):
-                    # No overlap between specified actions and device.
-                    return False
-            else:
+            # Don't check actions here since we don't have a way of setting
+            # the coerced action.
+            if not entity["action"]:
                 # specific action requested but device has no actions
                 return False
 
@@ -436,14 +453,13 @@ class HassIface:
                         # of matching entities.
                         matching_attributes.update(entity["attributes"])
 
-                    # Actions work very similarly to parameters
+                    # Actions work very similarly to parameters but the naming is much
+                    # less regular.
                     if actions:
                         # Only add matching actions
-                        matching_actions.update(
-                            a for a in entity["action"] if a in actions
-                        )
+                        matching_actions.update(self._match_actions(entity, actions))
                     else:
-                        # Accumulate all matching actions
+                        # Accumulate all actions for matching entities
                         matching_actions.update(entity["action"])
 
         return matching_actions, matching_areas, matching_entities, matching_attributes
