@@ -572,7 +572,11 @@ class HassIface:
                 current_value,
                 amount,
             )
-            await self._apply_abs_adjustment(parameter, amount, state)
+            try:
+                await self._apply_abs_adjustment(parameter, amount, state)
+            except vol.Invalid as ex:
+                # Service schema validation failure. We probably missed setting something.
+                raise ValueError(f"Could not set {parameter} for {did}") from ex
             success_ids.append(did)
 
         return success_ids
@@ -620,7 +624,11 @@ class HassIface:
                 state.attributes.get(parameter, None),
                 new_amount,
             )
-            await self._apply_abs_adjustment(parameter, new_amount, state)
+            try:
+                await self._apply_abs_adjustment(parameter, new_amount, state)
+            except vol.Invalid as ex:
+                # Service schema validation failure. We probably missed setting something.
+                raise ValueError(f"Could not adjust {parameter} for {did}") from ex
             success_ids.append(did)
 
         return success_ids
