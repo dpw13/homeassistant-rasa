@@ -528,9 +528,12 @@ class HassIface:
     async def apply_abs_adjustment(
         self, device_ids: list[str], parameter: str | None, amount: Any
     ) -> int:
-        """Make the requested adjustment to the specified devices."""
+        """Make the requested adjustment to the specified devices.
 
-        success_count = 0
+        Returns the list of successfully adjust device IDs.
+        """
+
+        success_ids = []
         for did in device_ids:
             state = self._hass.states.get(did)
             if not state:
@@ -547,16 +550,19 @@ class HassIface:
                 amount,
             )
             await self._apply_abs_adjustment(parameter, amount, state)
-            success_count += 1
+            success_ids.append(did)
 
-        return success_count
+        return success_ids
 
     async def apply_rel_adjustment(
         self, device_ids: list[str], parameter: str | None, amount: float
-    ) -> int:
-        """Make the requested adjustment to the specified devices."""
+    ) -> list[str]:
+        """Make the requested adjustment to the specified devices.
 
-        success_count = 0
+        Returns the list of successfully adjust device IDs.
+        """
+
+        success_ids = []
         for did in device_ids:
             state = self._hass.states.get(did)
             if not state:
@@ -592,9 +598,9 @@ class HassIface:
                 new_amount,
             )
             await self._apply_abs_adjustment(parameter, new_amount, state)
-            success_count += 1
+            success_ids.append(did)
 
-        return success_count
+        return success_ids
 
     async def apply_action(self, action: str, device_ids: list[str]) -> int:
         """Make the requested adjustment to the specified devices."""
@@ -634,4 +640,4 @@ class HassIface:
                 # Service schema validation failure. We probably missed setting something.
                 raise ValueError(f"Could not {action} {did}") from ex
 
-        return len(device_ids)
+        return device_ids

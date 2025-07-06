@@ -587,6 +587,11 @@ class SubmitAdjust(Action):
 
         msg = None
 
+        def name_devices(device_ids: list[str]) -> str:
+            if len(device_ids) > 1:
+                return f"{len(device_ids)} devices"
+            return device_ids[0].replace("_", " ")
+
         action: str = tracker.slots["action"]
         devices = tracker.slots["device"]
         if action == "set_relative":
@@ -596,12 +601,12 @@ class SubmitAdjust(Action):
                 msg = f"Sorry, I didn't understand the relative amount {amount}"
             else:
                 try:
-                    cnt = await _HASS_IF.apply_rel_adjustment(
+                    success_ids = await _HASS_IF.apply_rel_adjustment(
                         device_ids=devices,
                         parameter=param,
                         amount=amount,
                     )
-                    msg = f"Changed {param} on {cnt} device{'s' if cnt > 0 else ''}"
+                    msg = f"Changed {param} on {name_devices(success_ids)}"
                 except ValueError as ex:
                     msg = str(ex)
         elif action == "set_absolute":
@@ -609,22 +614,24 @@ class SubmitAdjust(Action):
             amount = tracker.slots["amount"]
 
             try:
-                cnt = await _HASS_IF.apply_abs_adjustment(
+                success_ids = await _HASS_IF.apply_abs_adjustment(
                     device_ids=devices,
                     parameter=param,
                     amount=amount,
                 )
-                msg = f"Set {param} on {cnt} device{'s' if cnt > 0 else ''}"
+                msg = f"Set {param} on {name_devices(success_ids)}"
             except ValueError as ex:
                 msg = str(ex)
         else:
             try:
-                cnt = await _HASS_IF.apply_action(action=action, device_ids=devices)
+                success_ids = await _HASS_IF.apply_action(
+                    action=action, device_ids=devices
+                )
                 # TODO: better past tense
                 action_names = action.split("_")
                 action_names[0] += "ed"
                 action_name = " ".join(action_names).capitalize()
-                msg = f"{action_name} {cnt} device{'s' if cnt > 0 else ''}"
+                msg = f"{action_name} {name_devices(success_ids)}"
             except ValueError as ex:
                 msg = str(ex)
 
