@@ -70,12 +70,13 @@ def _english_list(objs: list[Any], join: str = "and") -> str:
         # Shouldn't happen
         return ""
     if count == 1:
-        return str(obj_list[0])
+        return str(obj_list[0]).replace("_", " ")
     if count == 2:
-        return f" {join} ".join(obj_list)
+        return f" {join} ".join(obj_list).replace("_", " ")
 
     # Oxford comma 4lyfe
-    return ", ".join(obj_list[:-1]) + f", {join} " + str(obj_list[-1])
+    msg = ", ".join(obj_list[:-1]) + f", {join} " + str(obj_list[-1])
+    return msg.replace("_", " ")
 
 
 class DeviceLocationForm(FormValidationAction):
@@ -593,7 +594,11 @@ class SubmitAdjust(Action):
         def name_devices(device_ids: list[str]) -> str:
             if len(device_ids) > 1:
                 return f"{len(device_ids)} devices"
-            return device_ids[0].replace("_", " ")
+
+            # Remove domain from beginning of entity ID
+            # TODO: maybe use friendly name eventually
+            name = device_ids[0].split(".")[1]
+            return name.replace("_", " ")
 
         action: str = tracker.slots["action"]
         devices = tracker.slots["device"]

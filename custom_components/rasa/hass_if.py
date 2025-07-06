@@ -412,11 +412,15 @@ class HassIface:
 
         if isinstance(slots["parameter"], str):
             params = [slots["parameter"]]
+        elif slots["parameter"] is None:
+            params = []
         else:
             params = slots["parameter"]
 
         if isinstance(slots["action"], str):
             actions = [slots["action"]]
+        elif slots["action"] is None:
+            actions = []
         else:
             actions = slots["action"]
 
