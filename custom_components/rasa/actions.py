@@ -480,6 +480,9 @@ class DeviceAmountForm(DeviceLocationForm):
         slots_to_set["device"] = list(entity_ids)
 
         # Locations, actions, and parameters we only set if we only find one.
+
+        # TODO: after reworking the action matching, we can have situations where
+        # we find no matching actions but have a matching entity.
         _get_if_single(slots_to_set, actions, "action")
         _get_if_single(slots_to_set, location_ids, "location")
         _get_if_single(slots_to_set, parameters, "parameter")

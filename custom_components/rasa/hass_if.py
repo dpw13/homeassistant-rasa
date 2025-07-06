@@ -439,10 +439,22 @@ class HassIface:
                 if self._entity_is_candidate(
                     entity_id, slots["device"], params, actions
                 ):
-                    matching_areas.add(area_id)
-                    matching_entities.add(entity_id)
-
                     entity = self._entity_by_id[entity_id]
+
+                    # Actions work very similarly to parameters but the naming is much
+                    # less regular. Check actions first because we may still decide to ignore
+                    # this entity if no actions match.
+                    if actions:
+                        # Only add matching actions
+                        ent_actions = self._match_actions(entity, actions)
+                        # if no actions match, don't add entity
+                        if not ent_actions:
+                            continue
+                        matching_actions.update(ent_actions)
+                    else:
+                        # Accumulate all actions for matching entities
+                        matching_actions.update(entity["action"])
+
                     if params:
                         # Only add matching parameters if parameters were specified.
                         matching_attributes.update(
@@ -453,14 +465,8 @@ class HassIface:
                         # of matching entities.
                         matching_attributes.update(entity["attributes"])
 
-                    # Actions work very similarly to parameters but the naming is much
-                    # less regular.
-                    if actions:
-                        # Only add matching actions
-                        matching_actions.update(self._match_actions(entity, actions))
-                    else:
-                        # Accumulate all actions for matching entities
-                        matching_actions.update(entity["action"])
+                    matching_areas.add(area_id)
+                    matching_entities.add(entity_id)
 
         return matching_actions, matching_areas, matching_entities, matching_attributes
 
