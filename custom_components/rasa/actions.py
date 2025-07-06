@@ -618,7 +618,10 @@ class SubmitAdjust(Action):
                         parameter=param,
                         amount=amount,
                     )
-                    msg = f"Changed {param} on {name_devices(success_ids)}"
+                    if success_ids:
+                        msg = f"Changed {param} on {name_devices(success_ids)}"
+                    else:
+                        msg = f"Error changing {param} on {name_devices(devices)}"
                 except ValueError as ex:
                     msg = str(ex)
         elif action == "set_absolute":
@@ -631,7 +634,10 @@ class SubmitAdjust(Action):
                     parameter=param,
                     amount=amount,
                 )
-                msg = f"Set {param} on {name_devices(success_ids)}"
+                if success_ids:
+                    msg = f"Set {param} on {name_devices(success_ids)}"
+                else:
+                    msg = f"Error setting {param} on {name_devices(devices)}"
             except ValueError as ex:
                 msg = str(ex)
         else:
@@ -639,11 +645,15 @@ class SubmitAdjust(Action):
                 success_ids = await _HASS_IF.apply_action(
                     action=action, device_ids=devices
                 )
-                # TODO: better past tense
-                action_names = action.split("_")
-                action_names[0] += "ed"
-                action_name = " ".join(action_names).capitalize()
-                msg = f"{action_name} {name_devices(success_ids)}"
+
+                if success_ids:
+                    # TODO: better past tense
+                    action_names = action.split("_")
+                    action_names[0] += "ed"
+                    action_name = " ".join(action_names).capitalize()
+                    msg = f"{action_name} {name_devices(success_ids)}"
+                else:
+                    msg = f"Error calling {action} on {name_devices(devices)}"
             except ValueError as ex:
                 msg = str(ex)
 
