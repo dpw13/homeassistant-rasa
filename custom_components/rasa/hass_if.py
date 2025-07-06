@@ -46,7 +46,6 @@ INTERESTING_ATTRIBUTES = {
     "brightness",
     "humidity",
     "unit_of_measurement",
-    "device_class",
     "current_position",
     "percentage",
     "volume_level",
