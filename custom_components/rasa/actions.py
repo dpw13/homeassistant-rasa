@@ -349,9 +349,9 @@ class DeviceAmountForm(DeviceLocationForm):
     # Format: dict{txt: (Absolute, Amount)}
     ACTION_DICT = {
         "turn_up": ("set_relative", 25),
-        "turn_down": ("set_relative", 25),
+        "turn_down": ("set_relative", -25),
         "increase": ("set_relative", 25),
-        "decrease": ("set_relative", 25),
+        "decrease": ("set_relative", -25),
         "set": ("set_absolute", 0.0),
         # TODO: relative amount depends on what you're adjusting. A fan might be turned up by 25%,
         #   lights by 15%, and temperature by 2 degrees.
@@ -368,9 +368,9 @@ class DeviceAmountForm(DeviceLocationForm):
             # Actions are snake case
             action = candidate_act.replace(" ", "_")
             if action in self.ACTION_DICT:
-                action, amount = self.ACTION_DICT[action]
+                action, implied_amount = self.ACTION_DICT[action]
                 if amount is None:
-                    slots_to_set["amount"] = amount
+                    slots_to_set["amount"] = implied_amount
             slots_to_set["action"] = action
 
         return slots_to_set
@@ -510,6 +510,10 @@ class DeviceAmountForm(DeviceLocationForm):
         Implies 'set_absolute' if an amount was parsed but only if the
         action is not already set.
         """
+        if candidate_amount is None:
+            # Don't overwrite with a value of None
+            return {}
+
         ret: dict[str, Any] = {"amount": candidate_amount}
         mult = 1.0
 
