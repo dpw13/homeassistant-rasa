@@ -4,7 +4,7 @@
       "user": {
         "data": {
           "server_url": "[%key:common::config_flow::data::url%]",
-          "action_port": "[%key:common::config_flow::data::port%]",
+          "action_port": "[%key:common::config_flow::data::port%]"
         }
       }
     },

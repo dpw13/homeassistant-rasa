@@ -1,23 +1,18 @@
 rules:
   # Bronze
-  action-setup:
-    status: exempt
-    comment: Integration does not register any services
+  action-setup: done
   appropriate-polling:
     status: exempt
     comment: Integration does not poll
-  brands:
-    status: exempt
-    comment: No branding present
+  brands: done
   common-modules: done
-  # These are all todo but I want to get the damn thing tested first
-  config-flow-test-coverage: done
+  config-flow-test-coverage: todo
   config-flow: done
-  dependency-transparency: done
-  docs-actions: done
-  docs-high-level-description: done
-  docs-installation-instructions: done
-  docs-removal-instructions: done
+  dependency-transparency: todo
+  docs-actions: todo
+  docs-high-level-description: todo
+  docs-installation-instructions: todo
+  docs-removal-instructions: todo
   entity-event-setup: done
   entity-unique-id: done
   has-entity-name: done

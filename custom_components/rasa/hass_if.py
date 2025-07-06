@@ -588,6 +588,13 @@ class HassIface:
             # TODO: some service schemas require additional information.
             service_data = {CONF_ENTITY_ID: did}
             try:
+                # Apparently the "device automations" that define things like "open"
+                # and "close" for the `cover` domain don't actually map to services,
+                # so we get an error when attempting to open or close a cover. This
+                # may be true of other automations where the automation action does
+                # not match the service name.
+
+                # TODO: I have no idea how to actually trigger an automation action.
                 await self._hass.services.async_call(
                     state.domain,
                     action,

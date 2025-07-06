@@ -43,17 +43,20 @@ async def async_setup_entry(
 ) -> None:
     """Set up entity registry listener for the rasa agent."""
     agent = RasaAgent(hass, config_entry)
+
+    # components.conversation.async_setup calls async_setup_default_agent
+    # instead of calling async_setup() on the agent. TODO: see how other
+    # conversation agents handle prepare().
+    # Note that this actually connects to the server and sets some of the
+    # device info.
+    await agent.async_setup()
+
     # How are the entity and the agent related?
     async_add_entities([agent])
 
     hass.data[DATA_RASA_ENTITY] = agent
     # Registers the agent with the manager
     async_set_agent(hass, config_entry, agent)
-
-    # components.conversation.async_setup calls async_setup_default_agent
-    # instead of calling async_setup() on the agent. TODO: see how other
-    # conversation agents handle prepare().
-    await agent.async_setup()
 
     # TODO: unclear if the below are necessary for non-default agent
     @core.callback
@@ -76,6 +79,8 @@ async def async_setup_entry(
 class RasaAgent(ConversationEntity, AbstractConversationAgent):
     """Entity that communicates with a Rasa server."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, hass: core.HomeAssistant, entry: RasaConfigEntry) -> None:
         """Initialize the agent."""
         self._hass = hass
@@ -87,11 +92,14 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             manufacturer="Rasa",
-            name="Rasa NLP",
-            sw_version=rasa_client.__version__,
-            model="OSS Natural Language Server",
+            # This is the name of the specific device
+            name="Rasa Server",
+            model="Open Source Natural Language Server",
             entry_type=dr.DeviceEntryType.SERVICE,
+            # We will fill in the model ID and sw version when we connect below
         )
+        # This is the name of the entity, the instantiation of the integration.
+        self._attr_name = "Conversation Agent"
         self._attr_supported_features = ConversationEntityFeature.CONTROL
         self._action_server = RasaActionServer(
             hass, entry.data.get("action_port", 5055)
@@ -136,12 +144,16 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         try:
             rsp_ver = await self._server_info_api.get_version(DEFAULT_TIMEOUT)
             _LOGGER.info("Connected to Rasa server version %s", rsp_ver.version)
+            self._attr_device_info["sw_version"] = rsp_ver.version
             rsp_stat = await self._server_info_api.get_status(DEFAULT_TIMEOUT)
             _LOGGER.info(
                 "Rasa server running model %s at %s",
                 rsp_stat.model_id,
                 rsp_stat.model_file,
             )
+            # Specify the model file as the hardware version. We don't have a perfect
+            # way of communicating the model info, but this is close enough.
+            self._attr_device_info["hw_version"] = rsp_stat.model_file
         except ApiException as ex:
             raise IntegrationError from ex
 
