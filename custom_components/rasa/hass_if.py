@@ -517,7 +517,11 @@ class HassIface:
         new_state = state.state
 
         service_data = {CONF_ENTITY_ID: state.entity_id}
-        if parameter in state.attributes:
+        if parameter in ("volume_level"):
+            # HACK: volume_level doesn't exist in attributes for SOME REASON.
+            threshold = 1
+            service_data[parameter] = amount
+        elif parameter in state.attributes:
             # Note that we check for "approximately off", or less than 1% on.
             threshold = 1
             service_data[parameter] = amount
