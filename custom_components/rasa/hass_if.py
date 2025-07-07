@@ -591,6 +591,7 @@ class HassIface:
                 await self._apply_abs_adjustment(parameter, amount, state)
             except vol.Invalid as ex:
                 # Service schema validation failure. We probably missed setting something.
+                _LOGGER.exception("Failed to set %s for %s", parameter, did)
                 raise ValueError(f"Could not set {parameter} for {did}") from ex
             success_ids.append(did)
 
@@ -643,6 +644,7 @@ class HassIface:
                 await self._apply_abs_adjustment(parameter, new_amount, state)
             except vol.Invalid as ex:
                 # Service schema validation failure. We probably missed setting something.
+                _LOGGER.exception("Failed to adjust %s for %s", parameter, did)
                 raise ValueError(f"Could not adjust {parameter} for {did}") from ex
             success_ids.append(did)
 
@@ -679,11 +681,13 @@ class HassIface:
                     blocking=False,
                 )
             except ServiceNotFound as ex:
+                _LOGGER.exception("No action %s exists for %s", action, did)
                 raise ValueError(
                     f"No action {action} exists for {state.domain}"
                 ) from ex
             except vol.Invalid as ex:
                 # Service schema validation failure. We probably missed setting something.
+                _LOGGER.exception("Failed to call %s on %s", action, did)
                 raise ValueError(f"Could not {action} {did}") from ex
 
         return device_ids
