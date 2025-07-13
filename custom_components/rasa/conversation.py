@@ -127,11 +127,10 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         """Return a list of supported languages."""
         return ["en"]
 
-    async def async_prepare(self) -> None:
+    async def async_prepare(self, language: str) -> None:
         """Prepare agent for a specific language.
 
-        It's unknown where this is actually supposed to be called; it doesn't seem
-        to get called at all given our current setup.
+        Called from conversation async_prepare_agent.
         """
         _LOGGER.info("ASYNC_PREPARE")
 
