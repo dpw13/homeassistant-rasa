@@ -129,7 +129,8 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
 
         Called from conversation async_prepare_agent.
         """
-        _LOGGER.info("ASYNC_PREPARE")
+        # Refresh entities, devices, and locations from HA
+        await self._action_server.update()
 
     async def async_setup(self) -> None:
         """Set up the integration.
@@ -202,9 +203,6 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         # Alternatively it looks like `addConversationTrackerEvents` will automatically
         # create a new session if needed.
         if len(chat_log.content) == 2:  # TODO: HACK
-            # Refresh entities, devices, and locations from HA
-            await self._action_server.update()
-
             # Record satellite source to provide context-dependent responses.
             # Set the metadata on the session_start and interpret the metadata
             # in the action script.
@@ -214,6 +212,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             if user_input.device_id and (
                 device := self._device_registry.async_get(user_input.device_id)
             ):
+                metadata["satellite_name"] = device.name
                 metadata["satellite_location"] = device.area_id
 
             _LOGGER.debug("Setting metadata: %s", metadata)
