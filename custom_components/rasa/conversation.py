@@ -177,6 +177,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                         "confidence",
                         "text",
                         "intent",
+                        "metadata",
                     )
                 ]
                 _LOGGER.debug("-- %s evt: %s", data["event"], " ".join(pairs))
@@ -206,7 +207,11 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             # Record satellite source to provide context-dependent responses.
             # Set the metadata on the session_start and interpret the metadata
             # in the action script.
-            metadata = {"satellite_id": user_input.device_id}
+            metadata = {
+                "satellite_id": user_input.device_id,
+                # Unclear if this is useful (yet)
+                "satellite_user": user_input.context.user_id,
+            }
 
             # Retrieve and set satellite location
             if user_input.device_id and (
