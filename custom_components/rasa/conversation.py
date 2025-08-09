@@ -215,7 +215,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                     rasa_client.SlotEvent.from_dict(
                         {
                             "event": "slot",
-                            "name": "device_id",
+                            "name": "satellite_id",
                             "value": user_input.device_id,
                         }
                     )
@@ -231,7 +231,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                         rasa_client.SlotEvent.from_dict(
                             {
                                 "event": "slot",
-                                "name": "device_loc",
+                                "name": "satellite_location",
                                 "value": device.area_id,
                             }
                         )
