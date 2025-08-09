@@ -10,7 +10,6 @@ import rasa_client
 from rasa_client.rest import ApiException
 
 from homeassistant import core
-from homeassistant.components.assist_pipeline import async_migrate_engine
 from homeassistant.components.conversation import (
     AbstractConversationAgent,
     ChatLog,
@@ -105,13 +104,11 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             hass, entry.data.get("action_port", 5055)
         )
         self._last_ts = 0.0
+        self._device_registry = dr.async_get(hass)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to Home Assistant."""
         await super().async_added_to_hass()
-        async_migrate_engine(
-            self.hass, "conversation", self._entry.entry_id, self.entity_id
-        )
         async_set_agent(self.hass, self._entry, self)
         self._entry.async_on_unload(
             self._entry.add_update_listener(self._async_entry_update_listener)
@@ -205,15 +202,44 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         # Alternatively it looks like `addConversationTrackerEvents` will automatically
         # create a new session if needed.
         if len(chat_log.content) == 2:  # TODO: HACK
-            # Update entities
+            # Refresh entities, devices, and locations from HA
             await self._action_server.update()
-            msg_req = rasa_client.AddConversationTrackerEventsRequest(
+            events = [
                 rasa_client.Event(
                     rasa_client.SessionStartedEvent.from_dict(
                         {"event": "session_started"}
                     )
+                ),
+                # Record satellite source to provide context-dependent responses
+                rasa_client.Event(
+                    rasa_client.SlotEvent.from_dict(
+                        {
+                            "event": "slot",
+                            "name": "device_id",
+                            "value": user_input.device_id,
+                        }
+                    )
+                ),
+            ]
+
+            # Retrieve and set satellite location
+            if user_input.device_id and (
+                device := self._device_registry.async_get(user_input.device_id)
+            ):
+                events.append(
+                    rasa_client.Event(
+                        rasa_client.SlotEvent.from_dict(
+                            {
+                                "event": "slot",
+                                "name": "device_loc",
+                                "value": device.area_id,
+                            }
+                        )
+                    ),
                 )
-            )
+
+            msg_req = rasa_client.AddConversationTrackerEventsRequest(events)
+
             await self._tracker_api.add_conversation_tracker_events(
                 conversation_id=conv_id,
                 add_conversation_tracker_events_request=msg_req,
