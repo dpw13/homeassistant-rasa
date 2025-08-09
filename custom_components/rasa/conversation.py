@@ -204,51 +204,32 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
         if len(chat_log.content) == 2:  # TODO: HACK
             # Refresh entities, devices, and locations from HA
             await self._action_server.update()
-            events = [
-                # Record satellite source to provide context-dependent responses. Alternatively
-                # we can try to set the metadata on the session_start and interpret the metadata
-                # in the action script.
-                rasa_client.Event(
-                    rasa_client.SlotEvent.from_dict(
-                        {
-                            "event": "slot",
-                            "name": "satellite_id",
-                            "value": user_input.device_id,
-                        }
-                    )
-                ),
-            ]
+
+            # Record satellite source to provide context-dependent responses.
+            # Set the metadata on the session_start and interpret the metadata
+            # in the action script.
+            metadata = {"satellite_id": user_input.device_id}
 
             # Retrieve and set satellite location
             if user_input.device_id and (
                 device := self._device_registry.async_get(user_input.device_id)
             ):
-                events.append(
-                    rasa_client.Event(
-                        rasa_client.SlotEvent.from_dict(
-                            {
-                                "event": "slot",
-                                "name": "satellite_location",
-                                "value": device.area_id,
-                            }
-                        )
-                    ),
-                )
+                metadata["satellite_location"] = device.area_id
+
+            _LOGGER.debug("Setting metadata: %s", metadata)
+
             # Set slots *before* session_start. Slots will be carried over into new
             # conversation.
-            events.append(
+            msg_req = rasa_client.AddConversationTrackerEventsRequest(
                 rasa_client.Event(
                     rasa_client.SessionStartedEvent.from_dict(
                         {
                             "event": "session_started",
-                            "metadata": {
-                                "satellite_id": user_input.device_id,
-                            },
+                            "metadata": metadata,
                         }
                     )
                 )
             )
-            msg_req = rasa_client.AddConversationTrackerEventsRequest(events)
 
             await self._tracker_api.add_conversation_tracker_events(
                 conversation_id=conv_id,

@@ -31,7 +31,15 @@ import logging
 from typing import Any
 
 from rasa_sdk import Action, Tracker
-from rasa_sdk.events import ActiveLoop, AllSlotsReset, BotUttered, EventType, SlotSet
+from rasa_sdk.events import (
+    ActionExecuted,
+    ActiveLoop,
+    BotUttered,
+    EventType,
+    Restarted,
+    SessionStarted,
+    SlotSet,
+)
 from rasa_sdk.executor import CollectingDispatcher
 from rasa_sdk.forms import REQUESTED_SLOT, FormValidationAction
 
@@ -77,6 +85,42 @@ def _english_list(objs: list[Any], join: str = "and") -> str:
     # Oxford comma 4lyfe
     msg = ", ".join(obj_list[:-1]) + f", {join} " + str(obj_list[-1])
     return msg.replace("_", " ")
+
+
+#############
+# Session start
+#############
+
+
+class ActionSessionStart(Action):
+    """Override the session start action."""
+
+    def name(self) -> str:
+        """Required name of action."""
+        return "action_session_start"
+
+    async def run(
+        self, dispatcher, tracker: Tracker, domain: dict[str, Any]
+    ) -> list[EventType]:
+        """Import any existing metadata."""
+        metadata = tracker.get_slot("session_started_metadata")
+
+        events = [SessionStarted()]
+
+        logger.debug("Metadata '%s'", metadata)
+        if isinstance(metadata, dict):
+            for k, v in metadata.items():
+                events.append(SlotSet(k, v))
+
+        # the session should begin with a `session_started` event and an `action_listen`
+        # as a user message follows
+        events.append(ActionExecuted("action_listen"))
+        return events
+
+
+#############
+# Form validation
+#############
 
 
 class DeviceLocationForm(FormValidationAction):
@@ -258,7 +302,7 @@ class DeviceLocationForm(FormValidationAction):
             response = BotUttered(msg)
 
             # TODO: what do we do if nothing is found? Can we discard just one constraint?
-            return [response, AllSlotsReset()]
+            return [response, Restarted()]
 
         multiple = current_slots.get("multiple", False)
 
@@ -458,7 +502,7 @@ class DeviceAmountForm(DeviceLocationForm):
             response = BotUttered(msg)
 
             # TODO: what do we do if nothing is found? Can we discard just one constraint?
-            return [response, AllSlotsReset()]
+            return [response, Restarted()]
 
         multiple = current_slots.get("multiple", False)
 
@@ -657,7 +701,7 @@ class SubmitAdjust(Action):
             except ValueError as ex:
                 msg = str(ex)
 
-        return [BotUttered(msg), AllSlotsReset()]
+        return [BotUttered(msg), Restarted()]
 
 
 ########################
@@ -690,7 +734,7 @@ class SubmitQuery(Action):
         args = {k: tracker.slots[k] for k in ("location", "device", "parameter")}
         logger.info("Executing: %s", args)
 
-        return [BotUttered("Unimplemented, come back later."), AllSlotsReset()]
+        return [BotUttered("Unimplemented, come back later."), Restarted()]
 
 
 class SubmitFilter(Action):
@@ -707,4 +751,4 @@ class SubmitFilter(Action):
         domain: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """Docstring."""
-        return [BotUttered("Unimplemented, come back later."), AllSlotsReset()]
+        return [BotUttered("Unimplemented, come back later."), Restarted()]
