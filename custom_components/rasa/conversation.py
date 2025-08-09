@@ -205,12 +205,9 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             # Refresh entities, devices, and locations from HA
             await self._action_server.update()
             events = [
-                rasa_client.Event(
-                    rasa_client.SessionStartedEvent.from_dict(
-                        {"event": "session_started"}
-                    )
-                ),
-                # Record satellite source to provide context-dependent responses
+                # Record satellite source to provide context-dependent responses. Alternatively
+                # we can try to set the metadata on the session_start and interpret the metadata
+                # in the action script.
                 rasa_client.Event(
                     rasa_client.SlotEvent.from_dict(
                         {
@@ -237,7 +234,20 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                         )
                     ),
                 )
-
+            # Set slots *before* session_start. Slots will be carried over into new
+            # conversation.
+            events.append(
+                rasa_client.Event(
+                    rasa_client.SessionStartedEvent.from_dict(
+                        {
+                            "event": "session_started",
+                            "metadata": {
+                                "satellite_id": user_input.device_id,
+                            },
+                        }
+                    )
+                )
+            )
             msg_req = rasa_client.AddConversationTrackerEventsRequest(events)
 
             await self._tracker_api.add_conversation_tracker_events(
