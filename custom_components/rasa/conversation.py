@@ -231,20 +231,6 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             # the session_start_metadata slot.
             events = [
                 rasa_client.Event(
-                    rasa_client.ActionEvent.from_dict(
-                        {
-                            "event": "action",
-                            "name": "action_session_start",
-                            "metadata": metadata,
-                        }
-                    )
-                ),
-                rasa_client.Event(
-                    rasa_client.SessionStartedEvent.from_dict(
-                        {"event": "session_started"}
-                    )
-                ),
-                rasa_client.Event(
                     rasa_client.SlotEvent.from_dict(
                         {
                             "event": "slot",
