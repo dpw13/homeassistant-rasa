@@ -228,7 +228,7 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             # session_started event is really what we want to open with; we want
             # action_session_start as that is what contains the metadata that populates
             # the session_start_metadata slot.
-            msg_req = rasa_client.AddConversationTrackerEventsRequest(
+            events = [
                 rasa_client.Event(
                     rasa_client.ActionEvent.from_dict(
                         {
@@ -237,15 +237,28 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
                             "metadata": metadata,
                         }
                     )
-                )
-            )
+                ),
+                rasa_client.Event(
+                    rasa_client.SessionStartedEvent.from_dict(
+                        {"event": "session_started"}
+                    )
+                ),
+            ]
+            msg_req = rasa_client.AddConversationTrackerEventsRequest(events)
 
-            await self._tracker_api.add_conversation_tracker_events(
+            # We want to substitute the session_start sequence, but to do that the
+            # event sequence must match *exactly* what rasa expects. See
+            # do_events_begin_with_session_start in events.py.
+            _LOGGER.info("-> action_session_start")
+
+            tracker = await self._tracker_api.add_conversation_tracker_events(
                 conversation_id=conv_id,
                 add_conversation_tracker_events_request=msg_req,
             )
+            self._dump_tracker_evts(tracker)
         else:
             _LOGGER.debug("Chat log so far: %s", chat_log)
+        _LOGGER.info("-> message")
         tracker = await self._tracker_api.add_conversation_message(
             conversation_id=conv_id,
             message=rasa_client.Message(
