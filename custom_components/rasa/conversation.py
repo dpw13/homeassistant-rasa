@@ -229,6 +229,13 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             # session_started event is really what we want to open with; we want
             # action_session_start as that is what contains the metadata that populates
             # the session_start_metadata slot.
+            # The existing server code doesn't allow us to pass metadata through to
+            # the session initialization. Instead we just set the associated slot
+            # with the metadata and allow the server to initialize the session the
+            # way it wants to.
+            # If we fake the session start events, we only get "action_listen" events
+            # during prediction. The debug log seems to indicate the processor is
+            # in "state 0" instead of "state 1" as it is during successful operation.
             events = [
                 rasa_client.Event(
                     rasa_client.SlotEvent.from_dict(
@@ -242,28 +249,14 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
             ]
             msg_req = rasa_client.AddConversationTrackerEventsRequest(events)
 
-            # We want to substitute the session_start sequence, but to do that the
-            # event sequence must match *exactly* what rasa expects. See
-            # do_events_begin_with_session_start in events.py.
-            _LOGGER.info("-> action_session_start")
-
             tracker = await self._tracker_api.add_conversation_tracker_events(
                 conversation_id=conv_id,
                 add_conversation_tracker_events_request=msg_req,
             )
-            self._dump_tracker_evts(tracker)
-            # At this point the tracker contains the proper events (no duplicate
-            # session_start) but the session_start_metadata slot is not filled.
         else:
             _LOGGER.debug("Chat log so far: %s", chat_log)
 
         _LOGGER.info("-> message")
-        # Here the duplicate session_start events are added and the conversation is
-        # effectively split, discarding the earlier metadata...
-        # -> processor::log_message
-        # -> fetch_tracker_and_update_session
-        # -> _update_tracker_session
-        # --> creates new session because tracker.applied_events() is empty
         tracker = await self._tracker_api.add_conversation_message(
             conversation_id=conv_id,
             message=rasa_client.Message(
