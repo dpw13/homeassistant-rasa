@@ -224,11 +224,16 @@ class RasaAgent(ConversationEntity, AbstractConversationAgent):
 
             # Set slots *before* session_start. Slots will be carried over into new
             # conversation.
+            # Rasa is pre-populating action_session_start. It doesn't look like the
+            # session_started event is really what we want to open with; we want
+            # action_session_start as that is what contains the metadata that populates
+            # the session_start_metadata slot.
             msg_req = rasa_client.AddConversationTrackerEventsRequest(
                 rasa_client.Event(
-                    rasa_client.SessionStartedEvent.from_dict(
+                    rasa_client.ActionEvent.from_dict(
                         {
-                            "event": "session_started",
+                            "event": "action",
+                            "name": "action_session_start",
                             "metadata": metadata,
                         }
                     )
